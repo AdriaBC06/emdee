@@ -96,11 +96,21 @@ jobs:
 
       - name: Generate checksums
         shell: pwsh
+        # Only the files people can actually download. -Include needs -Recurse
+        # to match anything, and -Recurse walked into dist/Emdee/, so the sums
+        # file also listed Emdee.exe, base_library.zip and QtWebEngineProcess.exe
+        # from inside the bundle — entries a reader cannot check against
+        # anything, in a file whose whole purpose is being checkable. Explicit
+        # paths match the two artefacts and nothing below them.
         run: |
-          Get-ChildItem dist -File -Include *.zip, *.exe -Recurse |
-            ForEach-Object {
-              "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
-            } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          $artefacts = Get-ChildItem -Path dist\Emdee-*.zip, dist\Emdee-*.exe -File
+          if ($artefacts.Count -ne 2) {
+            Write-Error "expected 2 release artefacts, found $($artefacts.Count): $($artefacts.Name -join ', ')"
+            exit 1
+          }
+          $artefacts | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
           Get-Content dist\SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
