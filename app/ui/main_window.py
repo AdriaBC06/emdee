@@ -13,10 +13,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import (
     QBuffer,
+    QByteArray,
     QEasingCurve,
+    QEvent,
     QFileSystemWatcher,
     QMarginsF,
     QPoint,
@@ -63,6 +66,7 @@ from ..core.file_service import MARKDOWN_SUFFIXES, FileError
 from ..core.renderer import MarkdownRenderer, inline_local_images
 from ..core.settings import Settings, ViewMode
 from ..paths import app_logo
+from ..platform_support import uses_native_frame_hit_testing
 from ..themes.manager import ThemeManager
 from .about import AboutDialog
 from .editor import MarkdownEditor
@@ -71,9 +75,12 @@ from .find_replace import FindReplacePanel
 from .highlighter import MarkdownHighlighter
 from .icons import app_icon, themed_icon
 from .preview import MarkdownPreview
-from .settings_panel import PANEL_WIDTH, SettingsPanel
+from .settings_panel import SettingsPanel
 from .title_bar import TitleBar
 from .toolbar import ToolStrip
+
+if TYPE_CHECKING:
+    from .win_chrome import WindowsChrome
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +89,10 @@ __all__ = ["MainWindow"]
 RAIL_COLLAPSED = 58
 RAIL_EXPANDED = 196
 FILE_PANEL_WIDTH = 258
+#: Floor for the preferences drawer when the window is too small to spare a
+#: third of its width. Below this the drawer stops being usable at all, so it
+#: is allowed to encroach on the editor rather than shrink further.
+MIN_PANEL_WIDTH = 200
 ANIMATION_MS = 180
 SYNC_GUARD_MS = 140
 
@@ -96,6 +107,9 @@ class _Grip(QWidget):
 
     ``startSystemResize`` hands the interaction to the compositor, which is the
     only thing that works under Wayland and gives proper snapping on X11.
+
+    Not used on Windows, where the window keeps its real frame and the system
+    provides resize borders of its own — see :mod:`app.ui.win_chrome`.
     """
 
     def __init__(self, window: QWidget, edge: Qt.Edge, cursor: Qt.CursorShape) -> None:
@@ -134,8 +148,17 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
 
         self._use_native_chrome = settings.native_decorations
+        self._win_chrome: WindowsChrome | None = None
         if not self._use_native_chrome:
-            self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+            if uses_native_frame_hit_testing():
+                # Keep the real window frame and suppress only its painting; the
+                # flag below would replace it with a bare popup and take Aero
+                # Snap, the shadow and the resize borders with it.
+                from .win_chrome import WindowsChrome as _WindowsChrome
+
+                self._win_chrome = _WindowsChrome(self)
+            else:
+                self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
 
         self._build_actions()
         self._build_ui()
@@ -297,7 +320,15 @@ class MainWindow(QMainWindow):
         body.addWidget(self._settings_panel)
 
         self._grips: list[_Grip] = []
-        if not self._use_native_chrome:
+        if self._win_chrome is not None:
+            # Windows resizes from the frame it still owns; drawn-on grips would
+            # only shadow it and swallow clicks meant for the edge.
+            self._win_chrome.set_caption_widget(self._title_bar)
+            self._win_chrome.set_exclusions(self._title_bar.window_buttons)
+            self._win_chrome.set_maximize_button(
+                self._title_bar.maximize_button, self.toggle_maximized
+            )
+        elif not self._use_native_chrome:
             self._build_grips(root)
 
     # ------------------------------------------------------------------ rail
@@ -551,8 +582,25 @@ class MainWindow(QMainWindow):
             grip.raise_()
             self._grips.append(grip)
 
+    def nativeEvent(  # noqa: N802 - Qt API
+        self, event_type: QByteArray, message: object
+    ) -> tuple[bool, int]:
+        """Route the Windows chrome messages; ignore everything else.
+
+        Deliberately does not chain to ``super()``.  ``QWidget::nativeEvent`` is
+        an empty hook that only ever returns false, and invoking it through
+        PyQt6 crashes the process — sip mishandles the ``qintptr *result``
+        out-parameter on the way back. ``(False, 0)`` is the same answer, safely.
+        """
+        if self._win_chrome is not None:
+            handled = self._win_chrome.native_event(event_type, int(message))  # type: ignore[arg-type]
+            if handled is not None:
+                return handled
+        return False, 0
+
     def resizeEvent(self, event: QResizeEvent | None) -> None:  # noqa: N802 - Qt API
         super().resizeEvent(event)
+        self._reclaim_panel_width()
         if not self._grips:
             return
         thickness = 6
@@ -653,6 +701,11 @@ class MainWindow(QMainWindow):
         self._file_tree.apply_palette(palette)
         self._settings_panel.set_theme(key)
         self._settings_panel.refresh_swatches()
+        # A theme carries a UI font size, so the drawer's measurements may have
+        # just changed underneath it.
+        self._settings_panel.refresh_metrics()
+        if self.act_toggle_settings.isChecked():
+            self._settings_panel.setFixedWidth(self._settings_panel_width(True))
 
         icon = self._themes.icon_color
         disabled = tokens["muted_on_bg_alt"]
@@ -1043,7 +1096,39 @@ class MainWindow(QMainWindow):
         self._animate_width(self._file_panel, FILE_PANEL_WIDTH if opening else 0)
 
     def toggle_settings_panel(self, opening: bool) -> None:
-        self._animate_width(self._settings_panel, PANEL_WIDTH if opening else 0)
+        self._animate_width(self._settings_panel, self._settings_panel_width(opening), fixed=True)
+
+    def _settings_panel_width(self, opening: bool) -> int:
+        """How wide to open the preferences drawer, given the window we have.
+
+        ``fixed=True`` matters as much as the number: with a Fixed size policy a
+        widget takes its *sizeHint* clamped to the maximum, not the maximum
+        itself, so animating only the maximum left the panel at whatever its
+        content happened to hint — which is font-dependent, and on Windows fell
+        short of the room its own contents had been forced to occupy.
+
+        The cap keeps the drawer from crowding out the editor on a small window;
+        the panel reflows its swatch grid and wraps its text to cope.
+        """
+        if not opening:
+            return 0
+        preferred = self._settings_panel.preferred_width()
+        return min(preferred, max(MIN_PANEL_WIDTH, self.width() // 3))
+
+    def _reclaim_panel_width(self) -> None:
+        """Re-fit the open drawer when the window is resized.
+
+        Pinning the width with ``setFixedWidth`` is what makes the drawer honour
+        its computed size, but it also means it cannot give ground on its own as
+        the window shrinks around it.
+        """
+        if not hasattr(self, "_settings_panel"):  # still building the UI
+            return
+        if not self.act_toggle_settings.isChecked():
+            return
+        target = self._settings_panel_width(True)
+        if target != self._settings_panel.width():
+            self._settings_panel.setFixedWidth(target)
 
     def _animate_width(self, widget: QWidget, target: int, *, fixed: bool = False) -> None:
         animation = QPropertyAnimation(widget, b"maximumWidth", self)
@@ -1061,8 +1146,24 @@ class MainWindow(QMainWindow):
             self.showNormal()
         else:
             self.showMaximized()
+        self._sync_maximize_icon()
+
+    def _sync_maximize_icon(self) -> None:
         self._title_bar.set_maximized(self.isMaximized())
         self._title_bar.retint(self._themes.icon_color, self._themes.tokens["muted_on_bg_alt"])
+
+    def changeEvent(self, event: QEvent | None) -> None:  # noqa: N802 - Qt API
+        """Keep the maximise/restore glyph honest however the state changed.
+
+        The window is not always maximised by our own button: Aero Snap, Snap
+        Layouts, double-clicking the caption and ``Win`` + arrow all go straight
+        to the window manager. Reacting to the resulting state change is the only
+        way the icon stays in step — on Linux too, where a tiling or keyboard
+        shortcut does the same thing behind our back.
+        """
+        super().changeEvent(event)
+        if event is not None and event.type() == QEvent.Type.WindowStateChange:
+            self._sync_maximize_icon()
 
     # ------------------------------------------------------------ scroll sync
     def _guard(self) -> None:

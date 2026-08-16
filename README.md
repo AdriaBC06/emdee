@@ -4,13 +4,16 @@
 
 # Emdee
 
-**A fast, themeable Markdown editor for Linux.**
+**A fast, themeable Markdown editor for Linux and Windows.**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/AdriaBC06/emdee/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](../../actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.9-41cd52?style=flat-square&logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-bd93f9?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Linux-ff79c6?style=flat-square&logo=linux&logoColor=white)](#installation)
-[![Tests](https://img.shields.io/badge/tests-176%20passing-50fa7b?style=flat-square)](tests)
+[![Linux](https://img.shields.io/badge/Linux-supported-ff79c6?style=flat-square&logo=linux&logoColor=white)](#linux)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-8be9fd?style=flat-square&logo=windows&logoColor=white)](#windows)
+[![Tests](https://img.shields.io/badge/tests-179%20passing-50fa7b?style=flat-square)](tests)
+[![Download](https://img.shields.io/github/v/release/AdriaBC06/emdee?style=flat-square&label=download&color=bd93f9)](../../releases/latest)
 
 </div>
 
@@ -192,13 +195,73 @@ from the surface. So the themes *look* like their originals but stay legible.
 
 ## Installation
 
-> **Linux only.** Windows and macOS are not supported and are not tested. The
-> code avoids hardcoded paths so a future port stays viable, but nothing here
-> pretends to run anywhere else today.
+**Linux** and **Windows 10/11** are both supported. macOS is not: nothing in the
+code rules it out, but it has never been built or run there, and claiming
+otherwise would be guessing.
+
+### Windows
+
+Grab either artefact from the [**latest release**](../../releases/latest):
+
+| Download | What it is |
+| --- | --- |
+| `Emdee-<version>-setup.exe` | Installer. Per-user, so no administrator rights and no UAC prompt. Start-menu shortcut, optional `.md` association, clean uninstaller. |
+| `Emdee-<version>-windows-x64.zip` | Portable. Unzip anywhere — a USB stick, a folder with spaces in its name — and run `Emdee.exe`. |
+
+Nothing else to install: Python, Qt and the browser engine are all inside.
+
+Both downloads are **unsigned**, so SmartScreen will interrupt the first launch
+with "Windows protected your PC" — *More info* → *Run anyway*. A code-signing
+certificate costs a few hundred euros a year, which is not something a project
+like this carries. Each release ships `SHA256SUMS.txt` if you would rather
+verify the bytes than trust the publisher.
+
+<details>
+<summary><b>Why the download is ~200 MB</b></summary>
+
+The preview is a real browser engine, not an approximation of one. Qt WebEngine
+bundles Chromium, and `Qt6WebEngineCore.dll` alone is 191 MB. The build strips
+what it safely can — Chromium's debug resource packs, imaging libraries that
+only the icon tooling uses — but the engine itself is the size it is, and that
+same engine is what makes the preview and the PDF export faithful.
+
+</details>
+
+<details>
+<summary><b>State of the Windows port — read this before filing a bug</b></summary>
+
+Emdee was written on Linux and ported to Windows afterwards. The port is
+additive: no Linux behaviour was changed to accommodate it, and every
+platform-specific decision goes through
+[`app/platform_support.py`](app/platform_support.py) rather than being scattered
+through the interface as `sys.platform` checks.
+
+**Verified by hand on Windows 11:** window dragging, edge and corner resizing,
+double-click to maximise, `Win`+arrow snapping, Aero Snap, Snap Layouts,
+rounded corners and drop shadow; the preview rendering; HTML and PDF export; all
+six themes; the portable build running from an arbitrary path; the installer
+installing and uninstalling without residue.
+
+**Known limits:**
+
+- **File association needs one confirmation.** The installer registers Emdee as
+  a handler for `.md`, but since Windows 10 only the user can appoint a default
+  application — the setting is protected by a per-extension hash specifically so
+  installers cannot help themselves to it. The first time: right-click a `.md` →
+  *Open with* → *Choose another app* → **Emdee** → *Always*.
+- **Unsigned binaries.** See above.
+- **No automatic updates.** New versions are downloaded from Releases.
+- Tested on Windows 11 24H2 at 100% display scaling. The layout is derived from
+  font metrics rather than fixed pixels, so other scalings should be fine, but
+  "should be" is not "was".
+
+</details>
+
+### Linux
 
 Requires **Python 3.11+**.
 
-### Arch Linux
+#### Arch Linux
 
 ```bash
 sudo pacman -S python-pyqt6 python-pyqt6-webengine python-markdown-it-py python-pygments
@@ -210,7 +273,7 @@ python -m app.main
 `mdit-py-plugins` and `linkify-it-py` may not be packaged; grab them from the
 AUR or install them with `pip install --user mdit-py-plugins linkify-it-py`.
 
-### Debian / Ubuntu
+#### Debian / Ubuntu
 
 ```bash
 sudo apt install python3-pyqt6 python3-pyqt6.qtwebengine python3-markdown-it python3-pygments
@@ -219,7 +282,7 @@ cd emdee
 python3 -m app.main
 ```
 
-### Fedora
+#### Fedora
 
 ```bash
 sudo dnf install python3-pyqt6 python3-pyqt6-webengine python3-markdown-it-py python3-pygments
@@ -228,7 +291,7 @@ cd emdee
 python3 -m app.main
 ```
 
-### Virtualenv (any distribution — recommended)
+#### Virtualenv (any distribution — recommended)
 
 Self-contained and immune to whatever your distribution ships:
 
@@ -240,7 +303,7 @@ python3 -m venv .venv
 .venv/bin/python -m app.main
 ```
 
-### Desktop integration
+#### Desktop integration
 
 ```bash
 ./packaging/install.sh
@@ -258,7 +321,7 @@ That installs, entirely inside your home directory and without `sudo`:
 Then refreshes the desktop and icon caches. Reverse it with
 `./packaging/uninstall.sh` — your documents and preferences are left alone.
 
-### Wayland notes
+#### Wayland notes
 
 Emdee is developed on Arch + Wayland and also runs under X11. Window dragging
 and resizing use `startSystemMove` / `startSystemResize`, which is the only
@@ -275,6 +338,27 @@ stays blank, force software rendering:
 
 ```bash
 QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu" emdee
+```
+
+### Running from source on Windows
+
+Same as any Python project — the packaged builds above exist so that users do
+not have to do this, but development works the same way on both platforms:
+
+```powershell
+git clone https://github.com/AdriaBC06/emdee.git
+cd emdee
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m app.main
+```
+
+If the preview pane comes up blank — usually a virtual machine or a remote
+desktop session, where there is no usable GPU driver — force software rendering:
+
+```powershell
+$env:QTWEBENGINE_CHROMIUM_FLAGS = "--disable-gpu"
+.venv\Scripts\python -m app.main
 ```
 
 ---
@@ -454,7 +538,7 @@ been quietly base64-embedded into a file you then shared. Image inlining is now
 contained to the document's own folder, symlinks resolved first.
 
 The security tests live in
-[`tests/test_sanitize.py`](tests/test_sanitize.py) — 34 of the 176.
+[`tests/test_sanitize.py`](tests/test_sanitize.py) — 34 of the 179.
 
 ---
 
@@ -499,10 +583,20 @@ emdee/
 │   ├── emdee.desktop            # freedesktop Desktop Entry
 │   ├── icons/hicolor/           # generated PNG + SVG icon theme
 │   ├── install.sh
-│   └── uninstall.sh
-├── tools/build_icons.py         # SVG → every size, in one command
+│   ├── uninstall.sh
+│   └── windows/
+│       ├── emdee.spec           #    PyInstaller build, verifies its own output
+│       ├── emdee.iss            #    Inno Setup installer
+│       ├── entry_point.py       #    frozen-build shim (imports app as a package)
+│       ├── version_info.txt     #    Windows VERSIONINFO resource
+│       ├── emdee.ico            #    generated multi-resolution icon
+│       └── build.ps1            #    both artefacts, one command — used by CI too
+├── .github/workflows/
+│   ├── ci.yml                   # ruff + pytest on Linux, pytest + build on Windows
+│   └── release.yml              # tagged builds published to a Release
+├── tools/build_icons.py         # SVG → every size and the .ico, in one command
 ├── pyproject.toml               # pytest + ruff configuration
-├── tests/                       # 176 tests, no QApplication required
+├── tests/                       # 179 tests, no QApplication required
 ├── screenshots/                 # images used by this README
 ├── WELCOME.md                   # feature-complete demo document
 ├── requirements.txt
@@ -517,13 +611,15 @@ emdee/
 | Layer | Choice |
 | --- | --- |
 | Language | Python 3.11+ |
+| Platforms | Linux (Wayland · X11) · Windows 10/11 |
 | GUI toolkit | PyQt6 |
 | Preview | PyQt6-WebEngine (`QWebEngineView` + `QWebChannel`) |
 | Markdown | markdown-it-py + mdit-py-plugins + linkify-it-py |
 | Sanitising | nh3 (Mozilla ammonia / html5ever) |
 | Highlighting | Pygments (editor: a custom `QSyntaxHighlighter`) |
 | Shell design | PyDracula patterns, reimplemented for PyQt6 |
-| Tests / lint | pytest · ruff |
+| Windows packaging | PyInstaller · Inno Setup 6 |
+| Tests / lint | pytest · ruff · GitHub Actions on both platforms |
 
 ### Architecture decisions
 
@@ -604,15 +700,32 @@ incorporated as long as the copyright notice travels along. It does, in
 </details>
 
 <details>
-<summary><b>Why does the frameless window use <code>startSystemMove</code>?</b></summary>
+<summary><b>Why does the frameless window work in two completely different ways?</b></summary>
 
-The usual frameless recipe tracks mouse deltas and calls `move()`. Under Wayland
-a client cannot position its own surface, so that recipe simply does nothing.
-`QWindow.startSystemMove()` / `startSystemResize()` hand the interaction to the
-compositor, which works on Wayland *and* gives correct edge snapping on X11.
+Because "frameless with a custom title bar" is not one problem. It is two, and
+they have opposite solutions.
 
-For the cases where a compositor still misbehaves, **Use system title bar** in
-Preferences falls back to native decorations.
+**On Linux**, the usual recipe — track mouse deltas, call `move()` — does
+nothing under Wayland, where a client is not allowed to position its own
+surface. `QWindow.startSystemMove()` / `startSystemResize()` hand the
+interaction to the compositor instead, which works on Wayland *and* gives
+correct edge snapping on X11.
+
+**On Windows** that same call is the wrong tool: it starts a drag the window
+manager did not ask for, and setting `FramelessWindowHint` throws away Aero
+Snap, Snap Layouts, the resize borders, the drop shadow and the rounded
+corners — everything that makes a window feel like it belongs on the desktop.
+The native approach is the inverse: keep an ordinary top-level window, and
+suppress only the *drawing* of its non-client area by handling `WM_NCCALCSIZE`,
+then answer `WM_NCHITTEST` yourself so Windows still believes it owns the
+caption and the borders. It does, so all of its own behaviours keep working,
+including `Win`+arrow and the Snap Layouts flyout.
+
+Which path is taken is decided once, by
+[`uses_native_frame_hit_testing()`](app/platform_support.py), rather than by
+`sys.platform` checks scattered through the interface. And on both platforms,
+**Use system title bar** in Preferences falls back to the window manager's own
+decorations if the custom chrome misbehaves.
 
 </details>
 
@@ -624,7 +737,7 @@ Preferences falls back to native decorations.
 python -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 
-.venv/bin/python -m pytest              # 176 tests
+.venv/bin/python -m pytest              # 179 tests
 .venv/bin/ruff check              # lint (configured in pyproject.toml)
 .venv/bin/python tools/build_icons.py --check   # regenerate icons + contact sheet
 ```
@@ -632,6 +745,32 @@ python -m venv .venv
 `core/` never imports `PyQt6.QtWidgets`, so the interesting logic — rendering,
 text transformations, atomic I/O, dirty-state tracking, contrast maths — is
 tested without ever constructing a `QApplication`.
+
+The suite runs on both platforms and skips by *capability* rather than by
+platform name — POSIX permission bits and Windows file locking are genuinely
+different phenomena, so each is tested where it exists instead of both being
+reduced to whatever they have in common. A skip always says which platform
+feature was missing; see [`tests/conftest.py`](tests/conftest.py).
+
+### Building the Windows artefacts
+
+```powershell
+.venv\Scripts\pip install pyinstaller
+winget install JRSoftware.InnoSetup
+
+powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+```
+
+That writes `dist\Emdee\` (the unpacked application), the portable `.zip` and
+the installer. It is the same script CI runs, so a release is built by the
+recipe that was tested rather than by a second one that drifts from it.
+
+Packaging Qt WebEngine has one signature failure: the application starts, the
+window opens, and the preview pane is silently blank because
+`QtWebEngineProcess.exe` or Chromium's resource packs did not make it into the
+bundle. Both [`emdee.spec`](packaging/windows/emdee.spec) and the workflows
+check for those files explicitly and fail the build if they are missing — the
+one bug a "does it launch?" smoke test will happily wave through.
 
 `tools/build_icons.py --check` also writes a magnified contact sheet at
 `packaging/icons/contact-sheet.png`. The icon has to stay readable at 16 px;
@@ -643,6 +782,14 @@ trick hand-tuned icon themes use.
 
 ## Roadmap
 
+Done since the first release:
+
+- [x] **Windows 10/11 port** — native window chrome, `%APPDATA%` paths, atomic
+      saves that account for Windows file locking
+- [x] **Windows packaging** — portable build and an Inno Setup installer
+- [x] **CI** — ruff and pytest on Linux, pytest and a packaged build on Windows,
+      tagged releases published automatically
+
 Ideas, not commitments:
 
 - [ ] Document outline / table-of-contents panel
@@ -650,8 +797,9 @@ Ideas, not commitments:
 - [ ] Mermaid and KaTeX rendering in the preview
 - [ ] Custom user themes loaded from a config file
 - [ ] Spell checking
-- [ ] Binary packaging — AppImage, Flatpak, AUR
-- [ ] A Windows / macOS port, if someone wants to maintain it
+- [ ] Linux binary packaging — AppImage, Flatpak, AUR
+- [ ] Code signing for the Windows builds, so SmartScreen stops warning
+- [ ] A macOS port, if someone wants to maintain it
 
 ## Contributing
 

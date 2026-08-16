@@ -1,0 +1,30 @@
+# Emdee — line-ending policy.
+#
+# The repository stores text as LF and checks it out as LF on every platform,
+# including Windows.  Without this file Git's `core.autocrlf=true` (the Windows
+# default) rewrites the working tree to CRLF, and the first tool that writes a
+# file with LF turns an unrelated commit into a thousand-line whitespace diff.
+# Pinning it here means a Windows checkout and a Linux checkout are byte-identical.
+
+* text=auto eol=lf
+
+# Scripts that must keep LF whatever a local override says: a shebang line
+# ending in CR is a "bad interpreter" error, not a cosmetic problem.
+*.sh    text eol=lf
+*.desktop text eol=lf
+
+# Windows batch files are the one exception — cmd.exe is only reliably happy
+# with CRLF, and Inno Setup's compiler reads its script either way.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Binary assets: never touch the bytes, never try to diff them as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.mp4   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary

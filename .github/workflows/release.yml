@@ -1,0 +1,191 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Release
+
+# Tag a version and this publishes the Windows artefacts against it:
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# workflow_dispatch is here for dry runs — it builds and uploads the artefacts
+# to the run without creating or touching a Release, so the packaging can be
+# exercised without spending a version number on it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows artefacts
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.11.1
+
+      - name: Check the tag matches the application version
+        # Cheap now, and it prevents publishing a v1.1.0 release whose About
+        # dialog, executable metadata and installer all say 1.0.0 — a mismatch
+        # that is invisible until someone reports a bug against the wrong
+        # version.
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          $app = (python -c "import app; print(app.APP_VERSION)").Trim()
+          if ($tag -ne $app) {
+            Write-Error "tag $tag does not match app.APP_VERSION $app"
+            exit 1
+          }
+          Write-Host "tag and application version agree on $app"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build
+        run: powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -Python python
+
+      - name: Verify the WebEngine payload survived packaging
+        shell: pwsh
+        run: |
+          $root = "dist/Emdee/_internal"
+          $required = @(
+            "PyQt6/Qt6/bin/QtWebEngineProcess.exe",
+            "PyQt6/Qt6/resources/icudtl.dat",
+            "PyQt6/Qt6/resources/qtwebengine_resources.pak",
+            "PyQt6/Qt6/resources/qtwebengine_resources_100p.pak",
+            "PyQt6/Qt6/translations/qtwebengine_locales/en-US.pak",
+            "app/resources/icons/app/logo.svg",
+            "WELCOME.md"
+          )
+          $missing = $required | Where-Object { -not (Test-Path (Join-Path $root $_)) }
+          if ($missing) {
+            Write-Error "refusing to release a bundle missing:`n  $($missing -join "`n  ")"
+            exit 1
+          }
+
+      - name: Smoke-test the executable
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\Emdee\Emdee.exe" -ArgumentList "--size","800x600" -PassThru
+          Start-Sleep -Seconds 25
+          if ($p.HasExited) {
+            Write-Error "Emdee.exe exited with code $($p.ExitCode)"
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force
+
+      - id: version
+        shell: pwsh
+        run: |
+          $v = (python -c "import app; print(app.APP_VERSION)").Trim()
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -File -Include *.zip, *.exe -Recurse |
+            ForEach-Object {
+              "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+            } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          Get-Content dist\SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emdee-windows-${{ steps.version.outputs.version }}
+          path: |
+            dist/Emdee-*-windows-x64.zip
+            dist/Emdee-*-setup.exe
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: emdee-windows-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Emdee-*-windows-x64.zip
+            dist/Emdee-*-setup.exe
+            dist/SHA256SUMS.txt
+          draft: true
+          generate_release_notes: true
+          body: |
+            ## Windows
+
+            | Download | What it is |
+            | --- | --- |
+            | `Emdee-${{ needs.build.outputs.version }}-setup.exe` | Installer. Per-user, no administrator rights needed. Start-menu shortcut, optional `.md` association, clean uninstaller. |
+            | `Emdee-${{ needs.build.outputs.version }}-windows-x64.zip` | Portable. Unzip anywhere and run `Emdee.exe`. Nothing is written outside the folder except your preferences. |
+
+            Windows 10 or 11, 64-bit.
+
+            ### Windows will say it does not recognise this app
+
+            It will, and that is expected. Here is exactly what happens and why.
+
+            On first run you get a blue box headed **"Windows protected your PC"**,
+            saying Microsoft Defender SmartScreen prevented an unrecognised app
+            from starting. To continue: click **More info**, then **Run anyway**.
+
+            **What it means.** SmartScreen is not reporting that anything is
+            wrong with the file. It is reporting that it has no reason to vouch
+            for it. Two things earn that vouching: a code-signing certificate,
+            which ties the binary to a verified legal identity, and download
+            reputation, which accumulates as many people install the same file
+            without incident. These builds have neither. They are unsigned —
+            a certificate runs to a few hundred euros a year, which this project
+            does not carry — and every new release starts its reputation from
+            zero regardless.
+
+            **What it does not mean.** It is not a virus warning. SmartScreen
+            shows this same box for every unsigned application on the day it is
+            released, including ones that later become perfectly ordinary
+            software. A real malware detection looks different and does not
+            offer you a "Run anyway" button.
+
+            **If you would rather verify than take our word.** Every file's
+            SHA-256 is in `SHA256SUMS.txt` above. Check yours in PowerShell:
+
+            ```powershell
+            Get-FileHash .\Emdee-${{ needs.build.outputs.version }}-setup.exe -Algorithm SHA256
+            ```
+
+            The hashes are produced by the GitHub Actions run that built these
+            artefacts, from this repository's source, and the whole build log is
+            public. That is a stronger guarantee than a signature would give
+            you, since it lets you follow the file back to the commit it came
+            from rather than to a company name.
+
+            ### Why the download is ~200 MB
+
+            The preview is a real browser engine, not an approximation of one.
+            Qt WebEngine bundles Chromium, and that library alone is most of the
+            size. It is also what makes the preview and the PDF export faithful.
+
+            ## Linux
+
+            Run from source — see [Installation](https://github.com/AdriaBC06/emdee#installation).
+            No binary packaging yet.
