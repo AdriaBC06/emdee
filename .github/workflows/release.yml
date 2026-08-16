@@ -108,9 +108,22 @@ jobs:
             Write-Error "expected 2 release artefacts, found $($artefacts.Count): $($artefacts.Name -join ', ')"
             exit 1
           }
-          $artefacts | ForEach-Object {
+          $lines = $artefacts | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
-          } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          }
+          # LF, not CRLF. Set-Content writes Windows line endings, and the
+          # standard way to check this file is `sha256sum -c` — which then
+          # treats the trailing CR as part of the filename and reports
+          # "FAILED open or read". The hashes are fine; the message is not, and
+          # a verification tool crying failure at someone who is verifying an
+          # unsigned download is the worst possible false alarm. Windows users
+          # following the Get-FileHash instructions never saw this, which is
+          # exactly why it was worth checking both ways.
+          [System.IO.File]::WriteAllText(
+            "$PWD\dist\SHA256SUMS.txt",
+            ($lines -join "`n") + "`n",
+            [System.Text.UTF8Encoding]::new($false)
+          )
           Get-Content dist\SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
@@ -181,6 +194,13 @@ jobs:
 
             ```powershell
             Get-FileHash .\Emdee-${{ needs.build.outputs.version }}-setup.exe -Algorithm SHA256
+            ```
+
+            Or, from WSL, Linux or macOS, with the sums file beside the
+            downloads:
+
+            ```bash
+            sha256sum -c SHA256SUMS.txt
             ```
 
             The hashes are produced by the GitHub Actions run that built these
