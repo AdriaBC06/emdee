@@ -24,35 +24,19 @@
 
 </div>
 
-<!--
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │  VIDEO PLACEHOLDER — read this before publishing                        │
-  └─────────────────────────────────────────────────────────────────────────┘
+#### 📹 Full walkthrough · 47 seconds
 
-  GitHub does NOT play video served from the repository. A committed .mp4
-  linked with markdown renders as a plain download link, never a player.
-  A <video> tag is stripped by GitHub's HTML sanitiser too. The ONLY thing
-  that produces an embedded player is a user-attachments CDN URL:
+https://github.com/user-attachments/assets/d29b37a7-3ff6-4141-87f7-f96039c4375d
 
-    1. Open  https://github.com/AdriaBC06/emdee/issues/new
-    2. Drag  screenshots/demo.mp4  into the comment box and wait for the
-       upload to finish (it will take a few seconds for 2.6 MB).
-    3. GitHub inserts a line that looks like:
-         https://github.com/user-attachments/assets/1a2b3c4d-....
-    4. Copy that URL. Close the tab WITHOUT submitting the issue — the
-       attachment stays alive on the CDN regardless.
-    5. Replace the blockquote below with that URL, ON A LINE OF ITS OWN.
-       No ![](), no [](), no <video>. A bare URL alone on its line is
-       exactly what GitHub turns into a player.
-
-  The MP4 stays committed at screenshots/demo.mp4 either way, so the repo
-  remains self-contained even though the README points at the CDN.
--->
+<!-- The bare URL above is deliberate. GitHub only renders an inline player for
+     a user-attachments URL sitting alone in its own paragraph — wrapping it in
+     ![](), [](), a <video> tag or an HTML block turns it back into a plain
+     link. The same file is committed at screenshots/demo.mp4, so the repo
+     stays self-contained even though the README points at the CDN. -->
 
 <div align="center">
 
-> **📹 Full 47-second walkthrough** — [`screenshots/demo.mp4`](screenshots/demo.mp4)
-> <br><sub>Replace this blockquote with the `user-attachments` URL to get an inline player.</sub>
+<sub>Also committed in-repo: <a href="screenshots/demo.mp4"><code>screenshots/demo.mp4</code></a></sub>
 
 </div>
 
