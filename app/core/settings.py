@@ -19,10 +19,11 @@ from typing import Any
 from PyQt6.QtCore import QByteArray, QSettings
 
 from .. import APP_ID, APP_ORG
+from ..platform_support import IS_WINDOWS
 
 log = logging.getLogger(__name__)
 
-__all__ = ["Settings", "ViewMode", "MAX_RECENT_FILES"]
+__all__ = ["Settings", "ViewMode", "MAX_RECENT_FILES", "default_backend"]
 
 MAX_RECENT_FILES: int = 10
 
@@ -80,11 +81,30 @@ def _as_int(value: object, default: int) -> int:
         return default
 
 
+def default_backend() -> QSettings:
+    """Open the preferences store for this platform.
+
+    ``QSettings``'s native backend means an INI file under ``$XDG_CONFIG_HOME``
+    on Linux but the *registry* on Windows, under
+    ``HKCU\\Software\\Emdee\\emdee``.  Emdee asks for a file on both: it keeps
+    the About dialog's "stored in" line meaningful, it lets a user copy their
+    preferences between machines, and it is what makes a portable build
+    possible at all — a registry key would leak out of the folder the user
+    unpacked and follow them around after they deleted it.
+    """
+    if IS_WINDOWS:
+        # %APPDATA%\Emdee\emdee.ini
+        return QSettings(
+            QSettings.Format.IniFormat, QSettings.Scope.UserScope, APP_ORG, APP_ID
+        )
+    return QSettings(APP_ORG, APP_ID)
+
+
 class Settings:
     """Persistent application preferences."""
 
     def __init__(self, backend: QSettings | None = None) -> None:
-        self._qs = backend or QSettings(APP_ORG, APP_ID)
+        self._qs = backend or default_backend()
 
     # ----------------------------------------------------------- primitives
     def _get(self, key: str) -> Any:
