@@ -118,6 +118,55 @@ a = Analysis(
     noarchive=False,
 )
 
+# ------------------------------------------------- unused Qt plugin groups
+#
+# PyQt6's hooks collect every plugin Qt ships, including whole categories Emdee
+# has no use for. Dropping them is mostly about determinism rather than size.
+#
+# The Qt SQL drivers are the reason this exists. qsqlpsql.dll is a PostgreSQL
+# client, and PyInstaller resolves its dependency on libpq only when libpq
+# happens to be present on the build machine. A GitHub runner has PostgreSQL
+# installed; a developer's laptop usually does not — so the same commit produced
+# a bundle with an 8 MB PostgreSQL client and a second copy of OpenSSL on one
+# machine and without them on the other. A build whose contents depend on what
+# is installed beside it is not a build anyone can verify.
+#
+# Qt Quick 3D's scene parsers, asset importers and renderers, and the QML
+# language server, go for the same reason: nothing reaches them. Note that the
+# qml/ tree itself stays — QtWebEngineWidgets is implemented on Qt Quick
+# internally, and removing that breaks the preview.
+_UNUSED_PLUGIN_GROUPS = (
+    "sqldrivers",
+    "sceneparsers",
+    "assetimporters",
+    "renderers",
+    "qmlls",
+    "multimedia",
+)
+
+#: Libraries that only ever arrive as dependencies of the SQL drivers above.
+#: Named explicitly because PyInstaller collected them during analysis, before
+#: the plugin that wanted them was filtered out. The bare libcrypto-3.dll and
+#: libssl-3.dll are *not* here: those belong to Python's own ssl module.
+_SQL_CLIENT_LIBRARIES = {
+    "libpq.dll",
+    "libcrypto-3-x64.dll",
+    "libssl-3-x64.dll",
+}
+
+
+def _is_unwanted(destination: str) -> bool:
+    parts = destination.replace("\\", "/").split("/")
+    if "plugins" in parts:
+        index = parts.index("plugins")
+        if index + 1 < len(parts) and parts[index + 1] in _UNUSED_PLUGIN_GROUPS:
+            return True
+    return parts[-1].lower() in _SQL_CLIENT_LIBRARIES
+
+
+a.binaries = [entry for entry in a.binaries if not _is_unwanted(entry[0])]
+a.datas = [entry for entry in a.datas if not _is_unwanted(entry[0])]
+
 # Chromium ships a debug twin of every resource pack next to the real one. They
 # are read only by a debug build of Qt and cost around 50 MB.
 #
