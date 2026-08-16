@@ -1,0 +1,84 @@
+Emdee
+Copyright (C) 2026 Adrià Bonnin Catalán
+
+This program is free software licensed under the GNU General Public License,
+version 3 or later. See the LICENSE file for the full text.
+
+--------------------------------------------------------------------------------
+Third-party notices
+--------------------------------------------------------------------------------
+
+Modern GUI PyDracula (PySide6 / PyQt6)
+    Copyright (c) 2021 Wanderson M. Pimenta
+    https://github.com/Wanderson-Magalhaes/Modern_GUI_PyDracula_PySide6_or_PyQt6
+    Licensed under the MIT License.
+
+    Emdee's application shell — the collapsible icon rail, the frameless custom
+    title bar, the sliding preferences drawer and the general QSS approach — is
+    derived from the PyDracula template. The template targets PySide6; Emdee is
+    an independent PyQt6 reimplementation of those interface patterns. The Qt
+    Designer ``.ui`` files and the ``.qrc`` resource system were not carried
+    over (``pyrcc6`` does not exist for PyQt6), and no template source file is
+    redistributed verbatim.
+
+    MIT License
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+    (The MIT License is compatible with the GNU GPL v3; the combined work is
+    distributed under the GPL.)
+
+--------------------------------------------------------------------------------
+
+Feather Icons — Copyright (c) 2013-2023 Cole Bemis — MIT License
+    https://feathericons.com
+Lucide — Copyright (c) 2022 Lucide Contributors — ISC License
+    https://lucide.dev
+
+    The SVG icons in app/resources/icons/ui/ were hand-written for this project
+    in the Feather/Lucide visual style (24×24 grid, 2px stroke, round caps),
+    reusing their geometry where the shape is the obvious one. Both licences
+    permit this and both are GPL-compatible.
+
+--------------------------------------------------------------------------------
+
+Colour palettes
+
+    Dracula        — https://draculatheme.com        — MIT License
+    Catppuccin     — https://catppuccin.com          — MIT License
+    Rosé Pine      — https://rosepinetheme.com       — MIT License
+    Nord           — https://www.nordtheme.com       — MIT License
+
+    Only the published colour values are used. Emdee derives every other token
+    (hover states, selection tints, contrast-corrected foregrounds) itself, and
+    adjusts some values to meet WCAG AA; the results are therefore not exact
+    reproductions of the upstream themes.
+
+--------------------------------------------------------------------------------
+
+Runtime dependencies
+
+    PyQt6, PyQt6-WebEngine — Riverbank Computing — GPL v3 (or commercial)
+    Qt 6                   — The Qt Company        — LGPL v3
+    markdown-it-py         — Executable Books      — MIT License
+    mdit-py-plugins        — Executable Books      — MIT License
+    linkify-it-py          — Tatsuya Sato          — MIT License
+    Pygments               — Pygments team         — BSD 2-Clause
+    nh3                    — Messense Lv           — MIT License
+    ammonia (via nh3)      — Michael Howell        — MIT OR Apache-2.0

@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------- Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Packaging / build artefacts
+build/
+dist/
+sdist/
+wheels/
+*.egg-info/
+*.egg
+.eggs/
+MANIFEST
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Testing and tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# ------------------------------------------------------------------ Qt
+# Compiled Designer/resource output. Emdee builds its UI in Python and has no
+# .qrc at all (pyrcc6 does not exist for PyQt6), but keep these ignored so a
+# stray generated file never lands in a commit.
+ui_*.py
+*_rc.py
+*.qmlc
+*.jsc
+
+# --------------------------------------------------------------- project
+# Export output and manual-testing scratch. Emdee writes .html/.pdf next to the
+# document being exported, which during development is this very repository.
+*.pdf
+*.html
+/out/
+/scratch/
+/tmp/
+
+# Pasted clipboard images are written next to the document being edited.
+assets/
+
+# Generated at install time from the SVG sources; never edit or commit these.
+packaging/icons/contact-sheet.png
+
+# Local, machine-specific configuration that must never be published.
+.env
+.env.*
+*.local
+*.local.*
+.direnv/
+settings.ini
+emdee.conf
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store

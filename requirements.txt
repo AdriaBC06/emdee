@@ -1,0 +1,18 @@
+# Emdee runtime dependencies — pinned for reproducible installs.
+#
+# PyQt6 and PyQt6-WebEngine are GPL-licensed, which is why Emdee is
+# GPL-3.0-or-later too.  On Arch you may prefer the distribution packages
+# (python-pyqt6, python-pyqt6-webengine) over these wheels; see the README.
+
+PyQt6==6.9.1
+PyQt6-WebEngine==6.9.0
+
+markdown-it-py==3.0.0
+mdit-py-plugins==0.4.2
+linkify-it-py==2.0.3
+Pygments==2.19.2
+
+# HTML sanitising for untrusted documents: Python bindings for Mozilla's
+# ammonia (Rust/html5ever). Parsing is delegated to it on purpose — a
+# hand-rolled sanitiser is a bypass waiting to happen.
+nh3==0.3.6

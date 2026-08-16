@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Emdee
+GenericName=Markdown Editor
+Comment=Read, write and preview Markdown documents
+Exec=emdee %f
+TryExec=emdee
+Icon=emdee
+Terminal=false
+Categories=Utility;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;md;editor;notes;writing;preview;
+StartupNotify=true
+StartupWMClass=emdee
+Actions=NewDocument;
+
+[Desktop Action NewDocument]
+Name=New Document
+Exec=emdee

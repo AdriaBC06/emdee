@@ -1,0 +1,9 @@
+# Development-only tooling.
+-r requirements.txt
+
+pytest==8.4.2
+ruff==0.16.3
+
+# Optional: a pure-Python SVG rasteriser for tools/build_icons.py.
+# Without it the script falls back to rsvg-convert or inkscape.
+cairosvg==2.7.1

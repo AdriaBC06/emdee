@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Emdee">
+  <title>Emdee</title>
+  <defs>
+    <linearGradient id="emdeeGlyphSmall" x1="24" y1="44" x2="232" y2="212" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#bd93f9"/>
+      <stop offset="1" stop-color="#ff79c6"/>
+    </linearGradient>
+    <linearGradient id="emdeePlateSmall" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#343746"/>
+      <stop offset="1" stop-color="#21222c"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#emdeePlateSmall)"/>
+  <path d="M44 168V64l84 128 84-128v104" fill="none" stroke="url(#emdeeGlyphSmall)"
+        stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,25 @@
+# Emdee — tooling configuration.
+# The project is run from a checkout (python -m app.main), so there is no
+# build-system section here; this file exists purely to configure pytest and
+# ruff so the commands in the README work with no extra flags.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "packaging"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N", "W"]
+ignore = [
+    "E501",    # long lines are handled by the formatter, not the linter
+    "SIM108",  # ternaries are not always clearer than an if/else
+    "N802",    # Qt overrides use camelCase by definition
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]

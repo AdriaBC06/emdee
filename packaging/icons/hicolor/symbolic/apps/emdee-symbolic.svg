@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Emdee">
+  <title>Emdee</title>
+  <rect x="0" y="0" width="256" height="256" rx="58" fill="#282a36"/>
+  <g fill="#f8f8f2" stroke="#f8f8f2" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M36 176V84l41 66 41-66v92" fill="none"/>
+    <path d="M196 76v56" fill="none"/>
+    <path d="M158 126h76l-38 58Z" stroke="none"/>
+  </g>
+</svg>
