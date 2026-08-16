@@ -140,13 +140,50 @@ jobs:
             | `Emdee-${{ needs.build.outputs.version }}-setup.exe` | Installer. Per-user, no administrator rights needed. Start-menu shortcut, optional `.md` association, clean uninstaller. |
             | `Emdee-${{ needs.build.outputs.version }}-windows-x64.zip` | Portable. Unzip anywhere and run `Emdee.exe`. Nothing is written outside the folder except your preferences. |
 
-            Windows 10 or 11, 64-bit. Both downloads are unsigned, so SmartScreen
-            will warn on first run — **More info → Run anyway**. Verify what you
-            downloaded against `SHA256SUMS.txt` if you would rather not take that
-            on trust.
+            Windows 10 or 11, 64-bit.
 
-            The download is large because the preview is a real browser engine:
-            Chromium via Qt WebEngine, which is most of the size on its own.
+            ### Windows will say it does not recognise this app
+
+            It will, and that is expected. Here is exactly what happens and why.
+
+            On first run you get a blue box headed **"Windows protected your PC"**,
+            saying Microsoft Defender SmartScreen prevented an unrecognised app
+            from starting. To continue: click **More info**, then **Run anyway**.
+
+            **What it means.** SmartScreen is not reporting that anything is
+            wrong with the file. It is reporting that it has no reason to vouch
+            for it. Two things earn that vouching: a code-signing certificate,
+            which ties the binary to a verified legal identity, and download
+            reputation, which accumulates as many people install the same file
+            without incident. These builds have neither. They are unsigned —
+            a certificate runs to a few hundred euros a year, which this project
+            does not carry — and every new release starts its reputation from
+            zero regardless.
+
+            **What it does not mean.** It is not a virus warning. SmartScreen
+            shows this same box for every unsigned application on the day it is
+            released, including ones that later become perfectly ordinary
+            software. A real malware detection looks different and does not
+            offer you a "Run anyway" button.
+
+            **If you would rather verify than take our word.** Every file's
+            SHA-256 is in `SHA256SUMS.txt` above. Check yours in PowerShell:
+
+            ```powershell
+            Get-FileHash .\Emdee-${{ needs.build.outputs.version }}-setup.exe -Algorithm SHA256
+            ```
+
+            The hashes are produced by the GitHub Actions run that built these
+            artefacts, from this repository's source, and the whole build log is
+            public. That is a stronger guarantee than a signature would give
+            you, since it lets you follow the file back to the commit it came
+            from rather than to a company name.
+
+            ### Why the download is ~200 MB
+
+            The preview is a real browser engine, not an approximation of one.
+            Qt WebEngine bundles Chromium, and that library alone is most of the
+            size. It is also what makes the preview and the PDF export faithful.
 
             ## Linux
 
