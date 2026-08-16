@@ -1,0 +1,142 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: CI
+
+# Checks that run on both platforms Emdee supports. Releases are built by
+# release.yml, which reuses the same build script this workflow exercises.
+on:
+  push:
+    branches: [main, windows-support]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint and test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check app tools tests
+
+      - name: Pytest
+        # No test constructs a QApplication — core/ deliberately keeps widget
+        # imports out — but importing PyQt6.QtCore still wants a platform
+        # plugin, and a CI runner has no display to offer one.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Pytest
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+  build-windows:
+    name: Build Windows artefacts
+    runs-on: windows-latest
+    needs: [lint-and-test, test-windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.11.1
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build
+        # The same script used locally, so what CI produces is what was tested
+        # rather than a second recipe that drifts from the first.
+        run: powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -Python python
+
+      # A build that starts, opens a window and never renders a preview is the
+      # signature failure of packaging WebEngine, and it looks exactly like
+      # success to any check that only asks whether the process is alive. The
+      # spec verifies its own output, and this re-checks it in CI, where nobody
+      # is watching a screen.
+      - name: Verify the WebEngine payload survived packaging
+        shell: pwsh
+        run: |
+          $root = "dist/Emdee/_internal"
+          $required = @(
+            "PyQt6/Qt6/bin/QtWebEngineProcess.exe",
+            "PyQt6/Qt6/resources/icudtl.dat",
+            "PyQt6/Qt6/resources/qtwebengine_resources.pak",
+            "PyQt6/Qt6/resources/qtwebengine_resources_100p.pak",
+            "PyQt6/Qt6/translations/qtwebengine_locales/en-US.pak",
+            "app/resources/icons/app/logo.svg",
+            "WELCOME.md"
+          )
+          $missing = $required | Where-Object { -not (Test-Path (Join-Path $root $_)) }
+          if ($missing) {
+            Write-Error "missing from the bundle:`n  $($missing -join "`n  ")"
+            exit 1
+          }
+          Write-Host "WebEngine payload present."
+
+      - name: Smoke-test the executable
+        shell: pwsh
+        run: |
+          # Confirms the frozen bundle gets far enough to build its main window.
+          # It cannot confirm the preview renders — that needs a GPU-less
+          # Chromium to paint into a real compositor, which a CI runner does not
+          # have — so the payload check above is what stands in for it.
+          $p = Start-Process -FilePath "dist\Emdee\Emdee.exe" -ArgumentList "--size","800x600" -PassThru
+          Start-Sleep -Seconds 25
+          if ($p.HasExited) {
+            Write-Error "Emdee.exe exited with code $($p.ExitCode) instead of staying open"
+            exit 1
+          }
+          Write-Host "Emdee.exe is running."
+          Stop-Process -Id $p.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emdee-windows-portable
+          path: dist/Emdee-*-windows-x64.zip
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emdee-windows-installer
+          path: dist/Emdee-*-setup.exe
+          if-no-files-found: error
