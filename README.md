@@ -503,7 +503,7 @@ emdee/
 ├── tools/build_icons.py         # SVG → every size, in one command
 ├── pyproject.toml               # pytest + ruff configuration
 ├── tests/                       # 176 tests, no QApplication required
-├── screenshots/                 # see screenshots/README.md
+├── screenshots/                 # images used by this README
 ├── WELCOME.md                   # feature-complete demo document
 ├── requirements.txt
 ├── LICENSE                      # GNU GPL v3

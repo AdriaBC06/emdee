@@ -58,6 +58,9 @@ assets/
 # Generated at install time from the SVG sources; never edit or commit these.
 packaging/icons/contact-sheet.png
 
+# Internal production notes, not documentation for anyone arriving from outside.
+screenshots/README.md
+
 # Local, machine-specific configuration that must never be published.
 .env
 .env.*
