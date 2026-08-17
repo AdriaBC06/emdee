@@ -668,6 +668,31 @@ class MainWindow(QMainWindow):
         self._preview.set_css(self._themes.preview_css(self._settings.preview_font_size))
         self._render_preview()
 
+        self._repaint_window_chrome()
+
+    def _repaint_window_chrome(self) -> None:
+        """Invalidate the whole frame after a hot theme swap.
+
+        The resize handles are ``WA_TranslucentBackground`` children raised
+        above ``rootFrame``: they paint nothing and just reveal the frame's
+        1 px border underneath.  Installing a new stylesheet does not mark that
+        band dirty by itself, so on a desktop without a compositor — or over a
+        remote-desktop backend that only re-encodes the tiles it was told
+        changed — a strip of the *previous* theme's border can survive the
+        swap and show up as a dark line along the top edge.
+
+        Repainting the frame explicitly costs nothing on a theme change (it
+        happens once, on an event the user just triggered) and produces a
+        single full-window damage event, which is what a remote backend needs
+        in order to refresh the edges.
+        """
+        root = self.centralWidget()
+        if root is not None:
+            for grip in self._grips:
+                root.update(grip.geometry())
+            root.update()
+        self.update()
+
     # ============================================================= documents
     def _confirm_discard(self) -> bool:
         """Ask about unsaved changes.  Returns True when it is safe to go on."""
