@@ -22,6 +22,7 @@ from PyQt6.QtGui import (
     QPainter,
     QPaintEvent,
     QResizeEvent,
+    QTextBlock,
     QTextCursor,
     QTextFormat,
     QTextOption,
@@ -271,20 +272,37 @@ class MarkdownEditor(QPlainTextEdit):
         return self.firstVisibleBlock().blockNumber() + 1
 
     def scroll_to_line(self, line: int) -> None:
-        """Put the given 1-based source line at the top of the viewport."""
+        """Put the given 1-based source line at the top of the viewport.
+
+        The scrollbar is moved directly rather than by parking the text cursor
+        on the target block: ``setTextCursor`` keeps the caret visible, so
+        putting the caret back afterwards scrolls the viewport straight back to
+        wherever the user left it and the scroll never happens.  Nothing here
+        touches the cursor, which also means the selection survives a sync.
+        """
         block = self.document().findBlockByNumber(max(0, line - 1))
         if not block.isValid():
             return
-        cursor = QTextCursor(block)
-        current = self.textCursor()
-        self.setTextCursor(cursor)
-        self.ensureCursorVisible()
         bar = self.verticalScrollBar()
-        offset = round(
-            self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
-        )
-        bar.setValue(bar.value() + offset)
-        self.setTextCursor(current)
+        bar.setValue(min(self._scroll_value_for(block), bar.maximum()))
+
+    @staticmethod
+    def _scroll_value_for(block: QTextBlock) -> int:
+        """Scrollbar value that puts ``block`` at the top of the viewport.
+
+        ``QPlainTextEdit`` counts *visual* lines, not blocks, so with word wrap
+        on a paragraph that occupies three rows advances the bar by three.
+        Blocks the lazy layout has not reached yet report no lines and are
+        counted as one, which is what they will be once laid out unless they
+        wrap.
+        """
+        total = 0
+        current = block.document().begin()
+        while current.isValid() and current.blockNumber() < block.blockNumber():
+            if current.isVisible():
+                total += max(1, current.layout().lineCount())
+            current = current.next()
+        return total
 
     # ------------------------------------------------------- text operations
     def _replace_document(self, result: EditResult) -> None:
