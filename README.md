@@ -198,39 +198,73 @@ from the surface. So the themes *look* like their originals but stay legible.
 
 Requires **Python 3.11+**.
 
+### What Emdee needs
+
+Whichever route you take, these have to be present. The distribution commands
+below install all of them; the virtualenv route gets them from PyPI instead.
+
+| Dependency | Used for |
+| --- | --- |
+| PyQt6 (QtCore, QtGui, QtWidgets) | the entire UI |
+| **PyQt6 QtSvg** | every toolbar and sidebar icon (`app/ui/icons.py`) |
+| PyQt6 WebEngine | the live preview and PDF export |
+| markdown-it-py | Markdown parsing |
+| **mdit-py-plugins** | definition lists, footnotes, front matter, task lists |
+| **linkify-it-py** | turning bare URLs into links |
+| Pygments | syntax highlighting in code blocks |
+| **nh3** | HTML sanitising |
+
+The four in bold are the ones most commonly missed, because several
+distributions ship them separately from the main PyQt6 or Markdown packages.
+
 ### Arch Linux
 
 ```bash
-sudo pacman -S python-pyqt6 python-pyqt6-webengine python-markdown-it-py python-pygments
+sudo pacman -S python-pyqt6 python-pyqt6-webengine qt6-svg \
+               python-markdown-it-py python-mdit_py_plugins \
+               python-linkify-it-py python-pygments python-nh3
 git clone https://github.com/AdriaBC06/emdee.git
 cd emdee
 python -m app.main
 ```
 
-`mdit-py-plugins` and `linkify-it-py` may not be packaged; grab them from the
-AUR or install them with `pip install --user mdit-py-plugins linkify-it-py`.
+`qt6-svg` matters here: Arch declares it an *optional* dependency of
+`python-pyqt6`, so `pacman -S python-pyqt6` will not pull it in, and Emdee
+fails at startup with `ImportError: libQt6Svg.so.6` without it.
 
 ### Debian / Ubuntu
 
 ```bash
-sudo apt install python3-pyqt6 python3-pyqt6.qtwebengine python3-markdown-it python3-pygments
+sudo apt install python3-pyqt6 python3-pyqt6.qtsvg python3-pyqt6.qtwebengine \
+                 python3-markdown-it python3-mdit-py-plugins \
+                 python3-linkify-it python3-pygments python3-nh3
 git clone https://github.com/AdriaBC06/emdee.git
 cd emdee
 python3 -m app.main
 ```
+
+Debian splits each PyQt6 module into its own package, so `python3-pyqt6.qtsvg`
+has to be named explicitly alongside `python3-pyqt6`.
 
 ### Fedora
 
 ```bash
-sudo dnf install python3-pyqt6 python3-pyqt6-webengine python3-markdown-it-py python3-pygments
+sudo dnf install python3-pyqt6 python3-pyqt6-webengine \
+                 python3-markdown-it-py python3-mdit-py-plugins \
+                 python3-linkify-it-py python3-pygments python3-nh3
 git clone https://github.com/AdriaBC06/emdee.git
 cd emdee
 python3 -m app.main
 ```
 
+Fedora's `python3-pyqt6` carries the full set of bindings and RPM resolves the
+Qt libraries behind them automatically, so QtSvg needs no separate package —
+but note that `python3-pyqt6-base` alone is *not* enough.
+
 ### Virtualenv (any distribution — recommended)
 
-Self-contained and immune to whatever your distribution ships:
+Self-contained and immune to whatever your distribution ships. The PyQt6 wheels
+bundle their own Qt libraries, so none of the system packages above are needed:
 
 ```bash
 git clone https://github.com/AdriaBC06/emdee.git
@@ -239,6 +273,15 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m app.main
 ```
+
+### If it will not start
+
+| Error | Missing |
+| --- | --- |
+| `ImportError: libQt6Svg.so.6: cannot open shared object file` | QtSvg — `qt6-svg` (Arch) or `python3-pyqt6.qtsvg` (Debian/Ubuntu) |
+| `ModuleNotFoundError: No module named 'nh3'` | `python-nh3` / `python3-nh3` |
+| `ModuleNotFoundError: No module named 'mdit_py_plugins'` | `python-mdit_py_plugins` / `python3-mdit-py-plugins` |
+| `ModuleNotFoundError: Linkify enabled but not installed.` | `python-linkify-it-py` / `python3-linkify-it` |
 
 ### Desktop integration
 
