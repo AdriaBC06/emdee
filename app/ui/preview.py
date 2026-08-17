@@ -208,7 +208,7 @@ class MarkdownPreview(QWebEngineView):
     #: Emitted when a link to another Markdown file is clicked.
     document_link_clicked = pyqtSignal(Path)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, base_dir: Path | None = None) -> None:
         super().__init__(parent)
         self._page = _PreviewPage(self)
         self.setPage(self._page)
@@ -228,10 +228,12 @@ class MarkdownPreview(QWebEngineView):
         self._css = ""
         self._nonce = ""
         self._shell_url = QUrl()
-        self._base_dir: Path | None = None
+        # Set before the first shell load so startup needs a single setHtml.
+        self._base_dir: Path | None = base_dir
         self._pending_html: str | None = None
         self._last_body: str | None = None
         self._loaded = False
+        self._reload_queued = False
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -325,6 +327,21 @@ class MarkdownPreview(QWebEngineView):
         ).replace("<style>", f'{_SHELL_HEAD_SCRIPT}\n<style id="emdee-theme">', 1)
 
     def _load_shell(self) -> None:
+        """Queue a reload of the page shell, coalescing bursts into one load.
+
+        Startup sets the theme CSS and the base directory back to back, and
+        both fall through to a reload while the first one is still in flight.
+        Handing Chromium a second ``setHtml`` before it has finished the first
+        is enough to take the render process down, so the reloads are collapsed
+        onto the next event-loop turn and only the last one is actually issued.
+        """
+        if self._reload_queued:
+            return
+        self._reload_queued = True
+        QTimer.singleShot(0, self._reload_shell_now)
+
+    def _reload_shell_now(self) -> None:
+        self._reload_queued = False
         self._loaded = False
         self._pending_html = self._last_body
         base = QUrl.fromLocalFile(str(self._base_dir) + "/") if self._base_dir else QUrl()

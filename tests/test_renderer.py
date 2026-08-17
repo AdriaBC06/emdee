@@ -228,3 +228,52 @@ def test_build_page_emits_the_requested_csp() -> None:
     assert "script-src 'none'" in page
     assert "object-src 'none'" in page
     assert "base-uri 'none'" in page
+
+
+# ---------------------------------------------------------------- link schemes
+def test_file_urls_render_as_images(renderer: MarkdownRenderer) -> None:
+    """``file:`` is what a local document links its own pictures with."""
+    html = renderer.render_html("![a](file:///tmp/pic.png)")
+    assert '<img src="file:///tmp/pic.png" alt="a">' in html
+
+
+def test_file_urls_render_as_links(renderer: MarkdownRenderer) -> None:
+    html = renderer.render_html("[doc](file:///tmp/other.md)")
+    assert 'href="file:///tmp/other.md"' in html
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "[x](javascript:alert(1))",
+        "[x](JaVaScRiPt:alert(1))",
+        "[x](  javascript:alert(1))",
+        "![x](vbscript:msgbox(1))",
+        "![x](data:text/html;base64,PHNjcmlwdD4=)",
+    ],
+)
+def test_dangerous_schemes_are_still_refused(
+    renderer: MarkdownRenderer, source: str
+) -> None:
+    html = renderer.render_html(source).lower()
+    # The destination is left as literal text, so look for it in an attribute
+    # rather than anywhere in the output.
+    for scheme in ("javascript:", "vbscript:", "data:text/html"):
+        assert f'href="{scheme}' not in html
+        assert f'src="{scheme}' not in html
+
+
+def test_data_image_urls_survive(renderer: MarkdownRenderer) -> None:
+    html = renderer.render_html("![a](data:image/png;base64,iVBORw0KGgo=)")
+    assert 'src="data:image/png;base64,iVBORw0KGgo="' in html
+
+
+def test_relative_image_paths_are_left_alone(renderer: MarkdownRenderer) -> None:
+    """They are resolved by the preview's base URL, not rewritten here."""
+    for source, expected in (
+        ("![a](pic.png)", 'src="pic.png"'),
+        ("![a](./pic.png)", 'src="./pic.png"'),
+        ("![a](sub/pic.png)", 'src="sub/pic.png"'),
+        ("![a](/abs/pic.png)", 'src="/abs/pic.png"'),
+    ):
+        assert expected in renderer.render_html(source)

@@ -43,12 +43,39 @@ from .sanitize import sanitize_html
 
 log = logging.getLogger(__name__)
 
-__all__ = ["MarkdownRenderer", "Heading", "RenderResult", "slugify"]
+__all__ = ["MarkdownRenderer", "Heading", "RenderResult", "slugify", "validate_link"]
 
 #: Images larger than this are linked rather than inlined when exporting.
 MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
 
 _SLUG_STRIP = re.compile(r"[^\w\- ]+", re.UNICODE)
+
+#: Schemes markdown-it refuses by default.  ``file:`` is dropped from the list
+#: below; the other two stay banned.
+_BAD_SCHEME = re.compile(r"^(vbscript|javascript|data):", re.IGNORECASE)
+_GOOD_DATA = re.compile(r"^data:image/(gif|png|jpeg|webp);", re.IGNORECASE)
+
+
+def validate_link(url: str) -> bool:
+    """Decide whether a link destination may appear in the output.
+
+    markdown-it's default validator rejects ``file:`` outright, which means
+    ``![alt](file:///home/me/pic.png)`` is not even parsed as an image and ends
+    up in the preview as literal text — while the identical raw ``<img>`` tag
+    renders, because raw HTML never goes through this check.
+
+    Emdee is a local Markdown editor: ``file:`` is already in the sanitiser's
+    ``ALLOWED_URL_SCHEMES`` and the preview is configured to load local files.
+    So the scheme is permitted here too, and the parser stops disagreeing with
+    the rest of the pipeline.  ``javascript:`` and ``vbscript:`` remain refused,
+    ``data:`` still only for raster images, and everything that survives this
+    function is passed through :func:`~app.core.sanitize.sanitize_html`
+    afterwards, which drops any scheme not on its allow-list.
+    """
+    candidate = url.strip().lower()
+    if _BAD_SCHEME.match(candidate):
+        return bool(_GOOD_DATA.match(candidate))
+    return True
 
 
 def slugify(text: str) -> str:
@@ -139,6 +166,9 @@ class MarkdownRenderer:
             },
             renderer_cls=_EmdeeRenderer,
         )
+        # Instance attribute, so it shadows MarkdownIt.validateLink without
+        # subclassing the parser.
+        md.validateLink = validate_link
         md.enable(["table", "strikethrough", "linkify"])
         md.use(footnote_plugin)
         md.use(tasklists_plugin, enabled=True)

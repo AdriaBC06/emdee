@@ -431,7 +431,7 @@ class MainWindow(QMainWindow):
         editor_layout.addWidget(self._editor)
         self._editor_container = editor_container
 
-        self._preview = MarkdownPreview(self._splitter)
+        self._preview = MarkdownPreview(self._splitter, self._preview_base_dir())
         self._splitter.addWidget(editor_container)
         self._splitter.addWidget(self._preview)
         self._splitter.setStretchFactor(0, 1)
@@ -631,6 +631,7 @@ class MainWindow(QMainWindow):
         if len(sizes) == 2 and all(sizes):
             self._splitter.setSizes(sizes)
 
+        self._sync_preview_base_dir()
         self._preview.show_empty_state()
         self._update_titles()
         self._update_counts()
@@ -720,6 +721,7 @@ class MainWindow(QMainWindow):
             return
         self._set_watch_path(None)
         self._document.reset()
+        self._sync_preview_base_dir()
         self._set_editor_text("")
         self._status("New document")
 
@@ -776,7 +778,7 @@ class MainWindow(QMainWindow):
         self._settings.push_recent_file(path)
         if self._settings.last_folder is None:
             self._settings.last_folder = path.parent
-        self._preview.set_base_dir(path.parent)
+        self._sync_preview_base_dir()
         self._file_tree.select_path(path)
         self._render_preview()
 
@@ -818,7 +820,7 @@ class MainWindow(QMainWindow):
             return False
         self._set_watch_path(path)
         self._settings.push_recent_file(path)
-        self._preview.set_base_dir(path.parent)
+        self._sync_preview_base_dir()
         self._file_tree.mark_dirty(path, False)
         self._file_tree.select_path(path)
         self._status(f"Saved {path}")
@@ -894,6 +896,22 @@ class MainWindow(QMainWindow):
             self.reload_from_disk()
 
     # ================================================================ editing
+    def _sync_preview_base_dir(self) -> None:
+        """Point the preview's relative-URL resolution at the right folder.
+
+        The preview shell is loaded with a ``file:`` base URL; without one the
+        page origin is ``about:blank`` and Chromium refuses *every* local image,
+        including absolute paths and explicit ``file:`` URLs.  An untitled
+        document has no folder of its own, so it falls back to the last folder
+        the user worked in (and then to the home directory) rather than being
+        left with no base at all.
+        """
+        self._preview.set_base_dir(self._preview_base_dir())
+
+    def _preview_base_dir(self) -> Path:
+        """Folder relative URLs in the preview resolve against."""
+        return self._document.directory or self._settings.last_folder or Path.home()
+
     def _set_editor_text(self, text: str) -> None:
         self._editor.blockSignals(True)
         self._editor.setPlainText(text)
