@@ -103,6 +103,90 @@ def _trim_selection(text: str, start: int, end: int) -> tuple[int, int]:
 
 
 # ------------------------------------------------------------ inline marks
+def _run_length(text: str, index: int) -> int:
+    """How many times the character at ``index`` repeats from there."""
+    char = text[index]
+    end = index
+    while end < len(text) and text[end] == char:
+        end += 1
+    return end - index
+
+
+def _marker_at(text: str, index: int, marker: str) -> bool:
+    """True when ``marker`` starts at ``index`` and is not part of a longer run.
+
+    Every inline marker is one character repeated (``*``, ``**``, ``~~``,
+    ``` ` ```), so the ``*`` inside ``**bold**`` must not be mistaken for an
+    italic marker — otherwise italicising bold text would strip the bold.
+    """
+    if not text.startswith(marker, index):
+        return False
+    if len(set(marker)) != 1:
+        return True
+    return _run_length(text, index) == len(marker)
+
+
+def _find_marker(text: str, begin: int, stop: int, marker: str) -> int:
+    """Index of the first real ``marker`` in ``text[begin:stop]``, or -1."""
+    index = text.find(marker, begin, stop)
+    while index != -1:
+        if _marker_at(text, index, marker):
+            return index
+        index = text.find(marker, index + _run_length(text, index), stop)
+    return -1
+
+
+def _rfind_marker(text: str, begin: int, stop: int, marker: str) -> int:
+    """Index of the last real ``marker`` in ``text[begin:stop]``, or -1."""
+    found = -1
+    index = _find_marker(text, begin, stop, marker)
+    while index != -1:
+        found = index
+        index = _find_marker(text, index + len(marker), stop, marker)
+    return found
+
+
+def _enclosing_run(
+    text: str, position: int, marker: str, close: str
+) -> tuple[int, int] | None:
+    """Find the ``marker … close`` run the caret sits inside, if any.
+
+    Only the caret's own line is searched: emphasis does not span a blank line
+    in CommonMark, and scanning the whole document would happily pair up
+    markers belonging to two unrelated paragraphs.
+    """
+    line_start = text.rfind("\n", 0, position) + 1
+    line_end = text.find("\n", position)
+    if line_end == -1:
+        line_end = len(text)
+
+    opening = _rfind_marker(text, line_start, position, marker)
+    if opening == -1:
+        return None
+    closing = _find_marker(text, max(opening + len(marker), position), line_end, close)
+    if closing == -1:
+        return None
+    return opening, closing + len(close)
+
+
+def _is_wrapped(selected: str, marker: str, close: str) -> bool:
+    """True when ``selected`` is exactly one ``marker … close`` run.
+
+    ``**bold**`` must not read as an italic run when the marker is a single
+    ``*``; toggling italic on bold text is meant to add emphasis, not remove
+    half of the bold markers.
+    """
+    if len(selected) < len(marker) + len(close):
+        return False
+    if not (_marker_at(selected, 0, marker) and selected.endswith(close)):
+        return False
+    # The run that opens at 0 has to be the one that closes at the very end,
+    # otherwise this is several runs side by side ("**a** y **b**") and peeling
+    # off the outermost markers would wreck the ones in the middle.
+    closing = _find_marker(selected, len(marker), len(selected), close)
+    return closing == len(selected) - len(close)
+
+
 def toggle_wrap(
     text: str,
     start: int,
@@ -113,12 +197,25 @@ def toggle_wrap(
 ) -> EditResult:
     """Wrap or unwrap the selection with ``marker`` (e.g. ``**`` or ``` ` ```).
 
-    With no selection, the markers are inserted and the cursor is placed in the
+    With no selection the caret's own run is removed when it is already inside
+    one; otherwise the markers are inserted and the cursor is placed in the
     middle so the user can just keep typing.
+
+    On a selection the outcome is always unambiguous: either the whole
+    selection carries the formatting or none of it does.  A selection that
+    merely *contains* formatted runs has them flattened before being wrapped,
+    because leaving them in place would nest markers and produce something no
+    Markdown parser reads back the way it looks.
     """
     close = closing if closing is not None else marker
 
     if start == end:
+        run = _enclosing_run(text, start, marker, close)
+        if run is not None:
+            run_start, run_end = run
+            inner = text[run_start + len(marker) : run_end - len(close)]
+            new = text[:run_start] + inner + text[run_end:]
+            return EditResult(new, run_start, run_start + len(inner))
         if placeholder:
             new = text[:start] + marker + placeholder + close + text[end:]
             return EditResult(new, start + len(marker), start + len(marker) + len(placeholder))
@@ -130,7 +227,7 @@ def toggle_wrap(
     selected = text[start:end]
 
     # Already wrapped inside the selection -> unwrap.
-    if selected.startswith(marker) and selected.endswith(close) and len(selected) >= len(marker) + len(close):
+    if _is_wrapped(selected, marker, close):
         inner = selected[len(marker) : len(selected) - len(close)]
         new = text[:start] + inner + text[end:]
         return EditResult(new, start, start + len(inner))
@@ -146,8 +243,35 @@ def toggle_wrap(
         new = text[:outer_start] + selected + text[outer_end:]
         return EditResult(new, outer_start, outer_start + len(selected))
 
-    new = text[:start] + marker + selected + close + text[end:]
-    return EditResult(new, start + len(marker), end + len(marker))
+    body = _strip_runs(selected, marker, close)
+    new = text[:start] + marker + body + close + text[end:]
+    return EditResult(new, start + len(marker), start + len(marker) + len(body))
+
+
+def _strip_runs(selected: str, marker: str, close: str) -> str:
+    """Remove complete ``marker … close`` pairs from within a selection.
+
+    Markers belonging to a *different* emphasis level are left alone, so
+    flattening bold inside a selection never disturbs the italics around it.
+    """
+    if marker not in selected:
+        return selected
+
+    out: list[str] = []
+    index = 0
+    length = len(selected)
+    while index < length:
+        opening = _find_marker(selected, index, length, marker)
+        if opening == -1:
+            break
+        closing = _find_marker(selected, opening + len(marker), length, close)
+        if closing == -1:
+            break
+        out.append(selected[index:opening])
+        out.append(selected[opening + len(marker) : closing])
+        index = closing + len(close)
+    out.append(selected[index:])
+    return "".join(out)
 
 
 def make_link(text: str, start: int, end: int, url: str = "") -> EditResult:
@@ -175,8 +299,38 @@ def make_link(text: str, start: int, end: int, url: str = "") -> EditResult:
     return EditResult(new, start + 1, start + 1 + len(label))
 
 
+def _enclosing_fence(text: str, start: int, end: int) -> tuple[int, int] | None:
+    """Character range of the fenced block containing ``start``..``end``.
+
+    Without this a caret sitting on a line *inside* a code block sees only that
+    one line, decides it is not fenced, and opens a second fence inside the
+    first.
+    """
+    start, end = _trim_selection(text, start, end)
+    offset = 0
+    opening: tuple[int, str] | None = None
+    for line in text.split("\n"):
+        line_end = offset + len(line)
+        match = _CODE_FENCE.match(line)
+        if match and opening is None:
+            opening = (offset, match.group(1))
+        elif match and opening is not None and match.group(1) == opening[1]:
+            if opening[0] <= start and end <= line_end:
+                return opening[0], line_end
+            opening = None
+        offset = line_end + 1
+    return None
+
+
 def toggle_code_block(text: str, start: int, end: int, language: str = "") -> EditResult:
     """Wrap whole lines in a fenced code block, or remove an existing fence."""
+    fence = _enclosing_fence(text, start, end)
+    if fence is not None:
+        fence_start, fence_end = fence
+        inner = "\n".join(text[fence_start:fence_end].split("\n")[1:-1])
+        new = text[:fence_start] + inner + text[fence_end:]
+        return EditResult(new, fence_start, fence_start + len(inner))
+
     line_start, line_end = expand_selection_to_lines(text, start, end)
     block = text[line_start:line_end]
     lines = block.split("\n")
@@ -197,22 +351,32 @@ def toggle_code_block(text: str, start: int, end: int, language: str = "") -> Ed
 
 # ------------------------------------------------------------ line prefixes
 def toggle_block_prefix(text: str, start: int, end: int, prefix: str) -> EditResult:
-    """Add ``prefix`` to every selected line, or strip it when all lines have it."""
+    """Add ``prefix`` to every selected line, or strip it when all lines have it.
+
+    A selection that mixes prefixed and unprefixed lines gets the prefix added
+    only where it is missing.  Adding it everywhere would push the lines that
+    already had it a level deeper — a selection of a quote plus a plain line
+    came back as ``> > a`` / ``> b`` — and then the toggle no longer returns the
+    block to where it started.
+    """
     line_start, line_end = expand_selection_to_lines(text, start, end)
     lines = text[line_start:line_end].split("\n")
-    has_all = all(line.lstrip().startswith(prefix.strip()) or not line.strip() for line in lines)
+    marker = prefix.strip()
+    has_all = all(line.lstrip().startswith(marker) or not line.strip() for line in lines)
 
     out: list[str] = []
     for line in lines:
+        stripped = line.lstrip()
+        indent = line[: len(line) - len(stripped)]
         if has_all:
-            stripped = line.lstrip()
-            indent = line[: len(line) - len(stripped)]
             if stripped.startswith(prefix):
                 out.append(indent + stripped[len(prefix) :])
-            elif stripped.startswith(prefix.strip()):
-                out.append(indent + stripped[len(prefix.strip()) :].lstrip())
+            elif stripped.startswith(marker):
+                out.append(indent + stripped[len(marker) :].lstrip())
             else:
                 out.append(line)
+        elif stripped.startswith(marker):
+            out.append(line)
         else:
             out.append(prefix + line if line.strip() or len(lines) == 1 else line)
 

@@ -211,3 +211,64 @@ def test_expand_selection_to_lines() -> None:
     text = "alpha\nbeta\ngamma"
     assert expand_selection_to_lines(text, 7, 8) == (6, 10)
     assert expand_selection_to_lines(text, 0, 0) == (0, 5)
+
+
+# ----------------------------------------- toggling over existing formatting
+def test_wrap_removes_the_run_the_caret_sits_in() -> None:
+    result = toggle_wrap("**hola**", 4, 4, "**", placeholder="bold")
+    assert result.text == "hola"
+
+
+def test_wrap_only_removes_the_run_on_the_caret_line() -> None:
+    result = toggle_wrap("**a**\n**b**", 8, 8, "**", placeholder="bold")
+    assert result.text == "**a**\nb"
+
+
+def test_wrap_flattens_runs_inside_a_wider_selection() -> None:
+    """Nesting markers produces Markdown that reads back wrong."""
+    text = "esto es **hola** aqui"
+    result = toggle_wrap(text, 0, len(text), "**")
+    assert result.text == "**esto es hola aqui**"
+
+
+def test_wrap_does_not_strand_markers_across_several_runs() -> None:
+    text = "**a** y **b**"
+    result = toggle_wrap(text, 0, len(text), "**")
+    assert result.text == "**a y b**"
+
+
+def test_italic_on_bold_adds_emphasis_instead_of_eating_the_bold() -> None:
+    result = toggle_wrap("**hola**", 0, 8, "*")
+    assert result.text == "***hola***"
+
+
+def test_wrap_stays_reversible() -> None:
+    once = toggle_wrap("hola", 0, 4, "**")
+    twice = toggle_wrap(once.text, once.start, once.end, "**")
+    assert twice.text == "hola"
+
+
+def test_code_block_unfences_from_inside() -> None:
+    text = "```\nprint(1)\n```"
+    assert toggle_code_block(text, 6, 6).text == "print(1)"
+
+
+def test_code_block_unfences_when_only_the_body_is_selected() -> None:
+    text = "```\nprint(1)\n```"
+    assert toggle_code_block(text, 4, 12).text == "print(1)"
+
+
+def test_code_block_unfences_despite_trailing_whitespace() -> None:
+    text = "```\nprint(1)\n```\n"
+    assert toggle_code_block(text, 0, len(text)).text == "print(1)\n"
+
+
+def test_block_prefix_leaves_already_prefixed_lines_alone() -> None:
+    result = toggle_block_prefix("> a\nb", 0, 5, "> ")
+    assert result.text == "> a\n> b"
+
+
+def test_block_prefix_round_trips_a_mixed_selection() -> None:
+    once = toggle_block_prefix("> a\nb", 0, 5, "> ")
+    twice = toggle_block_prefix(once.text, 0, len(once.text), "> ")
+    assert twice.text == "a\nb"
