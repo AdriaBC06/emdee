@@ -13,8 +13,8 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
-from PyQt6.QtCore import QByteArray, QRectF, Qt
-from PyQt6.QtGui import QIcon, QPainter, QPixmap
+from PyQt6.QtCore import QByteArray, QRect, QRectF, QSize, Qt
+from PyQt6.QtGui import QIcon, QIconEngine, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 
 from ..paths import app_logo, icon_path
@@ -60,6 +60,53 @@ def themed_pixmap(name: str, color: str, size: int = _DEFAULT_SIZE, dpr: float =
     return pixmap
 
 
+class _SvgIconEngine(QIconEngine):
+    """Rasterises the SVG at whatever size and ratio Qt asks for.
+
+    Baking a couple of fixed device pixel ratios into a :class:`QIcon` and
+    letting it scale the nearest one defeats the point of shipping vectors:
+    Qt 6 passes fractional scale factors through unrounded, so on a desktop at
+    125%, 150% or 175% every icon becomes a resampled bitmap — and an 18 px
+    icon at 1.25 lands on a 23 px raster inside a 22 px box, which reads as the
+    icon being out of proportion rather than merely soft.
+    """
+
+    def __init__(self, name: str, color: str, disabled_color: str | None = None) -> None:
+        super().__init__()
+        self._name = name
+        self._color = color
+        self._disabled_color = disabled_color or color
+
+    def _color_for(self, mode: QIcon.Mode) -> str:
+        return self._disabled_color if mode == QIcon.Mode.Disabled else self._color
+
+    def scaledPixmap(  # noqa: N802 - Qt API
+        self, size: QSize, mode: QIcon.Mode, state: QIcon.State, scale: float
+    ) -> QPixmap:
+        edge = max(1, min(size.width(), size.height()))
+        return themed_pixmap(self._name, self._color_for(mode), edge, float(scale))
+
+    def pixmap(  # noqa: N802 - Qt API
+        self, size: QSize, mode: QIcon.Mode, state: QIcon.State
+    ) -> QPixmap:
+        return self.scaledPixmap(size, mode, state, 1.0)
+
+    def paint(
+        self, painter: QPainter, rect: QRect, mode: QIcon.Mode, state: QIcon.State
+    ) -> None:
+        device = painter.device()
+        ratio = device.devicePixelRatioF() if device is not None else 1.0
+        painter.drawPixmap(rect, self.scaledPixmap(rect.size(), mode, state, ratio))
+
+    def availableSizes(  # noqa: N802 - Qt API
+        self, mode: QIcon.Mode = QIcon.Mode.Normal, state: QIcon.State = QIcon.State.Off
+    ) -> list[QSize]:
+        return [QSize(edge, edge) for edge in (16, 18, 20, 24, 32, 48, 64)]
+
+    def clone(self) -> QIconEngine:
+        return _SvgIconEngine(self._name, self._color, self._disabled_color)
+
+
 @lru_cache(maxsize=512)
 def themed_icon(
     name: str,
@@ -69,16 +116,14 @@ def themed_icon(
 ) -> QIcon:
     """Return a :class:`QIcon` tinted for the current theme.
 
-    Two device pixel ratios are baked in so the icon stays sharp on HiDPI
-    screens without needing per-screen regeneration.
+    The icon renders itself from the SVG at the ratio the screen is actually
+    using, so it stays crisp at fractional UI scaling as well as at 1x and 2x.
+    ``size`` is kept in the signature — and in the cache key — because callers
+    pass the logical size they will draw at, but the engine honours whatever
+    size Qt requests at paint time.
     """
-    icon = QIcon()
-    for dpr in (1.0, 2.0):
-        icon.addPixmap(themed_pixmap(name, color, size, dpr), QIcon.Mode.Normal)
-    if disabled_color:
-        for dpr in (1.0, 2.0):
-            icon.addPixmap(themed_pixmap(name, disabled_color, size, dpr), QIcon.Mode.Disabled)
-    return icon
+    del size  # the engine renders at the requested size
+    return QIcon(_SvgIconEngine(name, color, disabled_color))
 
 
 #: Below this size the full logo is replaced by the simplified glyph.
