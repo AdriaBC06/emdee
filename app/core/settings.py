@@ -58,6 +58,7 @@ DEFAULTS: dict[str, Any] = {
     "recent_files": [],
     "first_run_done": False,
     "split_sizes": [],
+    "file_panel_width": 258,
 }
 
 
@@ -208,6 +209,15 @@ class Settings:
     @sidebar_expanded.setter
     def sidebar_expanded(self, value: bool) -> None:
         self._set("sidebar_expanded", bool(value))
+
+    @property
+    def file_panel_width(self) -> int:
+        """Width the explorer opens at.  Clamped to the window when applied."""
+        return max(120, min(1200, _as_int(self._get("file_panel_width"), 258)))
+
+    @file_panel_width.setter
+    def file_panel_width(self, value: int) -> None:
+        self._set("file_panel_width", int(value))
 
     @property
     def native_decorations(self) -> bool:

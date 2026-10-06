@@ -99,6 +99,14 @@ QWidget#filePanel {
     border-right: 1px solid {border};
 }
 
+QWidget#panelResizeHandle {
+    background-color: transparent;
+}
+
+QWidget#panelResizeHandle:hover {
+    background-color: {border_strong};
+}
+
 QPushButton#menuButton {
     background-color: transparent;
     border: none;

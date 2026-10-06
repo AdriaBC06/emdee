@@ -88,7 +88,11 @@ __all__ = ["MainWindow"]
 
 RAIL_COLLAPSED = 58
 RAIL_EXPANDED = 196
-FILE_PANEL_WIDTH = 258
+#: Narrowest the explorer can be dragged to and still show a usable tree.
+MIN_FILE_PANEL_WIDTH = 140
+#: Room the editor always keeps, however wide the explorer is dragged — on a
+#: 640x480 display the panel must never squeeze the document out entirely.
+MIN_EDITOR_WIDTH = 240
 #: Floor for the preferences drawer when the window is too small to spare a
 #: third of its width. Below this the drawer stops being usable at all, so it
 #: is allowed to encroach on the editor rather than shrink further.
@@ -126,6 +130,72 @@ class _Grip(QWidget):
                 event.accept()
                 return
         super().mousePressEvent(event)
+
+
+class _PanelResizeHandle(QWidget):
+    """Drag strip on the explorer's trailing edge.
+
+    The panel's width is pinned with ``setFixedWidth`` so the open/close
+    animation lands exactly, which leaves nothing for the user to drag; this
+    strip reports how far the pointer has travelled and the window decides
+    what width that amounts to.
+    """
+
+    def __init__(
+        self,
+        parent: QWidget,
+        on_drag: Callable[[int], None],
+        on_release: Callable[[], None],
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("panelResizeHandle")
+        self.setFixedWidth(5)
+        self.setCursor(Qt.CursorShape.SplitHCursor)
+        # Plain QWidgets ignore QSS backgrounds without this; the hover tint is
+        # what tells the user the edge can be grabbed.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._on_drag = on_drag
+        self._on_release = on_release
+        self._origin: float | None = None
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt API
+        if event is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._origin = event.globalPosition().x()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt API
+        if event is not None and self._origin is not None:
+            self._on_drag(round(event.globalPosition().x() - self._origin))
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt API
+        if event is not None and self._origin is not None:
+            self._origin = None
+            self._on_release()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
+class _FilePanel(QWidget):
+    """The explorer: as wide as its maximum width when there is room for it.
+
+    The width is driven through ``maximumWidth`` rather than ``setFixedWidth``.
+    A fixed width feeds straight into the window's minimum size, so a panel
+    dragged wide on a large screen would stop the window from shrinking at
+    all; with a ``Maximum`` policy and this size hint the layout gives the
+    panel its chosen width when it can and takes some back when it cannot.
+    """
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return QSize(self.maximumWidth(), super().sizeHint().height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return QSize(self.minimumWidth(), super().minimumSizeHint().height())
 
 
 class MainWindow(QMainWindow):
@@ -412,13 +482,27 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ file panel
     def _build_file_panel(self) -> QWidget:
-        self._file_panel = QWidget()
+        self._file_panel = _FilePanel()
         self._file_panel.setObjectName("filePanel")
         self._file_panel.setMinimumWidth(0)
         self._file_panel.setMaximumWidth(0)
-        self._file_panel.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self._file_panel.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding
+        )
 
-        layout = QVBoxLayout(self._file_panel)
+        outer = QHBoxLayout(self._file_panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        content = QWidget(self._file_panel)
+        outer.addWidget(content, 1)
+        self._file_panel_drag_start = 0
+        outer.addWidget(
+            _PanelResizeHandle(
+                self._file_panel, self._drag_file_panel, self._finish_file_panel_drag
+            )
+        )
+
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -441,6 +525,7 @@ class MainWindow(QMainWindow):
     def _build_center(self) -> QWidget:
         center = QWidget()
         center.setObjectName("centerStack")
+        self._center = center
         layout = QVBoxLayout(center)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -667,7 +752,7 @@ class MainWindow(QMainWindow):
             self._file_tree.set_root(folder)
             self._folder_label.setText(folder.name or str(folder))
             # Reopening with a folder but no explorer would look broken.
-            self._file_panel.setMaximumWidth(FILE_PANEL_WIDTH)
+            self._set_file_panel_width(self._file_panel_width())
             self.act_toggle_files.setChecked(True)
 
         self._rail_expanded = self._settings.sidebar_expanded
@@ -1136,7 +1221,41 @@ class MainWindow(QMainWindow):
             button.setText(caption if self._rail_expanded else "")
 
     def toggle_file_panel(self, opening: bool) -> None:
-        self._animate_width(self._file_panel, FILE_PANEL_WIDTH if opening else 0)
+        target = self._file_panel_width() if opening else 0
+        self._file_panel.setMinimumWidth(0)
+        animation = self._animate_width(self._file_panel, target)
+        animation.finished.connect(lambda: self._set_file_panel_width(target))
+
+    def _set_file_panel_width(self, width: int) -> None:
+        self._file_panel.setMaximumWidth(width)
+        self._file_panel.setMinimumWidth(min(width, MIN_FILE_PANEL_WIDTH))
+
+    def _file_panel_width(self, wanted: int | None = None) -> int:
+        """The explorer width to use: the user's choice, fitted to the window.
+
+        The upper bound leaves the editor :data:`MIN_EDITOR_WIDTH` next to the
+        rail and the preferences drawer, so a width chosen on a large monitor
+        cannot swallow the document on a small one.
+        """
+        if wanted is None:
+            wanted = self._settings.file_panel_width
+        drawer = self._settings_panel.width() if hasattr(self, "_settings_panel") else 0
+        editor = max(MIN_EDITOR_WIDTH, self._center.minimumSizeHint().width())
+        room = self.width() - self._rail.width() - drawer - editor
+        return max(MIN_FILE_PANEL_WIDTH, min(wanted, room))
+
+    def _drag_file_panel(self, delta: int) -> None:
+        if not self._file_panel_drag_start:
+            self._file_panel_drag_start = self._file_panel.width()
+        self._set_file_panel_width(self._file_panel_width(self._file_panel_drag_start + delta))
+
+    def _finish_file_panel_drag(self) -> None:
+        if self._file_panel_drag_start:
+            # The requested width, not width(): the layout may not have run yet,
+            # and on a cramped window it may be showing the panel narrower than
+            # the user asked for.
+            self._settings.file_panel_width = self._file_panel.maximumWidth()
+        self._file_panel_drag_start = 0
 
     def toggle_settings_panel(self, opening: bool) -> None:
         self._animate_width(self._settings_panel, self._settings_panel_width(opening), fixed=True)
@@ -1167,13 +1286,18 @@ class MainWindow(QMainWindow):
         """
         if not hasattr(self, "_settings_panel"):  # still building the UI
             return
-        if not self.act_toggle_settings.isChecked():
-            return
-        target = self._settings_panel_width(True)
-        if target != self._settings_panel.width():
-            self._settings_panel.setFixedWidth(target)
+        if self.act_toggle_settings.isChecked():
+            target = self._settings_panel_width(True)
+            if target != self._settings_panel.width():
+                self._settings_panel.setFixedWidth(target)
+        if self.act_toggle_files.isChecked():
+            target = self._file_panel_width()
+            if target != self._file_panel.maximumWidth():
+                self._set_file_panel_width(target)
 
-    def _animate_width(self, widget: QWidget, target: int, *, fixed: bool = False) -> None:
+    def _animate_width(
+        self, widget: QWidget, target: int, *, fixed: bool = False
+    ) -> QPropertyAnimation:
         animation = QPropertyAnimation(widget, b"maximumWidth", self)
         animation.setDuration(ANIMATION_MS)
         animation.setStartValue(widget.width())
@@ -1183,6 +1307,7 @@ class MainWindow(QMainWindow):
             animation.finished.connect(lambda: widget.setFixedWidth(target))
             widget.setMinimumWidth(0)
         animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        return animation
 
     def toggle_maximized(self) -> None:
         if self.isMaximized():
