@@ -5,6 +5,9 @@ name: Release
 #
 #   git tag v1.0.0 && git push origin v1.0.0
 #
+# The release is published as soon as every artefact has been built and
+# smoke-tested; nothing is uploaded unless all jobs passed.
+#
 # workflow_dispatch is here for dry runs — it builds and uploads the artefacts
 # to the run without creating or touching a Release, so the packaging can be
 # exercised without spending a version number on it.
@@ -206,7 +209,7 @@ jobs:
             dist/Emdee-*-setup.exe
             dist/Emdee-*-x86_64.AppImage
             dist/SHA256SUMS.txt
-          draft: true
+          draft: false
           generate_release_notes: true
           # Each paragraph is one long line on purpose. GitHub Flavored Markdown
           # renders a single newline inside a paragraph as <br>, so text wrapped
