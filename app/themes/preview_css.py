@@ -337,6 +337,41 @@ img.emoji {
     background: none;
 }
 
+/* A failed <img> collapses to a tiny box that hides its alt text, so the
+   preview swaps it for this placeholder (see the shell script in preview.py). */
+img.emdee-broken {
+    display: none;
+}
+
+.emdee-broken-image {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    max-width: 100%;
+    padding: 0.45em 0.8em;
+    border: 1px dashed {red_on_bg_alt};
+    border-radius: 6px;
+    background: {bg_alt};
+    color: {muted_on_bg_alt};
+    font-size: 0.9em;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.emdee-broken-image::before {
+    content: "\26A0";
+    color: {red_on_bg_alt};
+}
+
+.emdee-broken-image .emdee-broken-alt {
+    color: {text_on_bg_alt};
+}
+
+.emdee-broken-image .emdee-broken-src {
+    font-family: {mono_stack};
+    font-size: 0.85em;
+}
+
 figure {
     margin: 0 0 1.4em;
     text-align: center;
@@ -452,6 +487,13 @@ h1, h2, h3, h4, h5, h6 {
 pre, blockquote, table, figure, img {
     break-inside: avoid-page;
     page-break-inside: avoid;
+}
+
+/* The on-screen rounding and tint blend into the themed background; on paper
+   they clip real pixels off screenshots and diagrams. */
+img {
+    border-radius: 0;
+    background: none;
 }
 
 tr, li {

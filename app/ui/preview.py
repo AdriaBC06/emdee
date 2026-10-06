@@ -124,6 +124,35 @@ _SHELL_SCRIPT = r"""
 
     window.addEventListener('resize', collect, { passive: true });
 
+    // A broken <img> collapses to a small box with its alt text clipped, so a
+    // dead link is nearly invisible.  ``error`` does not bubble, hence the
+    // capture phase: one listener covers every image setContent ever inserts.
+    document.addEventListener('error', function (event) {
+        const img = event.target;
+        if (!(img instanceof HTMLImageElement) || img.classList.contains('emdee-broken')) {
+            return;
+        }
+        const src = img.getAttribute('src') || '';
+        const alt = img.getAttribute('alt') || '';
+        const box = document.createElement('span');
+        box.className = 'emdee-broken-image';
+        box.setAttribute('role', 'img');
+        box.setAttribute('aria-label', alt || 'Image not found');
+        box.title = 'Image not found: ' + src;
+        if (alt) {
+            const label = document.createElement('span');
+            label.className = 'emdee-broken-alt';
+            label.textContent = alt;
+            box.appendChild(label);
+        }
+        const path = document.createElement('span');
+        path.className = 'emdee-broken-src';
+        path.textContent = src || '(no source)';
+        box.appendChild(path);
+        img.classList.add('emdee-broken');
+        img.after(box);
+    }, true);
+
     new QWebChannel(qt.webChannelTransport, function (channel) {
         window.emdeeBridge = channel.objects.emdeeBridge;
         state.ready = true;

@@ -280,3 +280,14 @@ def test_relative_image_paths_are_left_alone(renderer: MarkdownRenderer) -> None
         ("![a](/abs/pic.png)", 'src="/abs/pic.png"'),
     ):
         assert expected in renderer.render_html(source)
+
+
+def test_print_stylesheet_keeps_image_corners_square() -> None:
+    from app.themes.preview_css import build_preview_css
+
+    screen = build_preview_css(PALETTES["dracula"])
+    paper = build_preview_css(PALETTES["dracula"], for_print=True)
+    assert "border-radius: 8px" in screen
+    # The print block comes last, so its reset wins over the screen rule.
+    tail = paper[paper.index("-- print */") :]
+    assert "img {\n    border-radius: 0;\n    background: none;" in tail
