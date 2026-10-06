@@ -8,8 +8,8 @@ and emits a signal, so preferences are persistent by construction — there is n
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QMouseEvent, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -25,29 +25,88 @@ from PyQt6.QtWidgets import (
 from ..core.settings import Settings
 from ..themes.palettes import PALETTES, Palette
 
-__all__ = ["SettingsPanel", "PANEL_WIDTH"]
+__all__ = ["SettingsPanel"]
 
-PANEL_WIDTH = 292
+#: How wide the drawer's text column should read, in characters of the UI font.
+#: The panel used to carry a pixel width instead, which silently assumed one
+#: font: the same constant that left room to spare under DejaVu Sans clipped the
+#: content under Segoe UI, because the panel's real width comes from its
+#: ``sizeHint`` and that shrank with the narrower font.  Measuring in characters
+#: keeps the proportion the design intended on any font, at any DPI.
+TEXT_COLUMN_CHARS = 34
+
+#: The swatch grid's preferred shape.  It reflows to fewer columns when the
+#: panel is squeezed, but never spreads wider than this.
+SWATCH_COLUMNS = 2
 
 
 class _Swatch(QWidget):
-    """Clickable preview of one palette."""
+    """Clickable preview of one palette.
+
+    Reports honest size hints derived from its own label, so the grid above it
+    can tell when two of them no longer fit side by side.  It previously
+    reported none at all, which is why the panel had no idea it was being drawn
+    narrower than its contents needed.
+    """
 
     clicked = pyqtSignal(str)
+
+    #: Inset of the painted card inside the widget.
+    CARD_INSET = 4
+    #: Gap between the card's top edge and the row of accent dots.
+    DOT_TOP_GAP = 9
+    DOT_SIZE = 11
+    DOT_GAP = 5
+    #: Breathing room either side of the palette name.
+    LABEL_PADDING = 8
 
     def __init__(self, palette: Palette, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("themeSwatch")
-        self.setFixedHeight(58)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(palette.name)
         self._palette = palette
         self._selected = False
         self.setProperty("selected", "false")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     @property
     def key(self) -> str:
         return self._palette.key
+
+    # ----------------------------------------------------------- measurement
+    def _label_font(self) -> QFont:
+        """The font the palette name is painted in.
+
+        Used for both painting and measuring, so the two can never disagree
+        about how much room the name needs.
+        """
+        font = QFont(self.font())
+        font.setPointSizeF(max(7.5, font.pointSizeF() - 1.5))
+        return font
+
+    def _dots_width(self) -> int:
+        count = 4
+        return count * self.DOT_SIZE + (count - 1) * self.DOT_GAP
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        metrics = QFontMetrics(self._label_font())
+        content = max(
+            metrics.horizontalAdvance(self._palette.name) + 2 * self.LABEL_PADDING,
+            self._dots_width() + 2 * self.LABEL_PADDING,
+        )
+        height = (
+            2 * self.CARD_INSET
+            + self.DOT_TOP_GAP
+            + self.DOT_SIZE
+            + self.DOT_GAP
+            + metrics.height()
+            + self.DOT_TOP_GAP
+        )
+        return QSize(content + 2 * self.CARD_INSET, height)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return self.minimumSizeHint()
 
     def set_selected(self, selected: bool) -> None:
         if selected == self._selected:
@@ -65,7 +124,8 @@ class _Swatch(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        rect = self.rect().adjusted(4, 4, -4, -4)
+        inset = self.CARD_INSET
+        rect = self.rect().adjusted(inset, inset, -inset, -inset)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(self._palette.bg))
         painter.drawRoundedRect(rect, 6, 6)
@@ -76,24 +136,26 @@ class _Swatch(QWidget):
             self._palette.green,
             self._palette.cyan,
         ]
-        size = 11
-        gap = 5
-        total = len(dots) * size + (len(dots) - 1) * gap
-        x = rect.center().x() - total // 2
-        y = rect.top() + 9
+        x = rect.center().x() - self._dots_width() // 2
+        y = rect.top() + self.DOT_TOP_GAP
         for color in dots:
             painter.setBrush(QColor(color))
-            painter.drawEllipse(x, y, size, size)
-            x += size + gap
+            painter.drawEllipse(x, y, self.DOT_SIZE, self.DOT_SIZE)
+            x += self.DOT_SIZE + self.DOT_GAP
 
         painter.setPen(QColor(self._palette.on("text", "bg")))
-        font = painter.font()
-        font.setPointSizeF(max(7.5, font.pointSizeF() - 1.5))
-        painter.setFont(font)
+        painter.setFont(self._label_font())
+        label_top = self.DOT_TOP_GAP + self.DOT_SIZE + self.DOT_GAP
         painter.drawText(
-            rect.adjusted(4, 26, -4, -4),
+            rect.adjusted(self.LABEL_PADDING, label_top, -self.LABEL_PADDING, 0),
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-            self._palette.name,
+            # Elide rather than spill, for the case where the panel has been
+            # squeezed below even the single-column width.
+            QFontMetrics(self._label_font()).elidedText(
+                self._palette.name,
+                Qt.TextElideMode.ElideRight,
+                rect.width() - 2 * self.LABEL_PADDING,
+            ),
         )
         painter.end()
 
@@ -101,6 +163,60 @@ class _Swatch(QWidget):
         if event is not None and event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.key)
         super().mouseReleaseEvent(event)
+
+
+class _SwatchGrid(QWidget):
+    """Theme swatches laid out in as many columns as actually fit.
+
+    A fixed two-column grid is right at the panel's natural width, but it has
+    to give way rather than clip when the window is too narrow to grant that —
+    on a small screen, or beside a maximised editor at the minimum window size.
+    """
+
+    def __init__(self, swatches: list[_Swatch], spacing: int, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._swatches = swatches
+        self._columns = 0
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(spacing)
+        for swatch in swatches:
+            swatch.setParent(self)
+        self._apply(SWATCH_COLUMNS)
+
+    def _widest_swatch(self) -> int:
+        return max(s.minimumSizeHint().width() for s in self._swatches)
+
+    def columns_for(self, width: int) -> int:
+        """How many columns of swatches fit in ``width``."""
+        needed = self._widest_swatch()
+        spacing = self._grid.spacing()
+        fit = (width + spacing) // (needed + spacing)
+        return max(1, min(SWATCH_COLUMNS, int(fit)))
+
+    def natural_width(self) -> int:
+        """Width at which the grid shows its preferred number of columns."""
+        return (
+            SWATCH_COLUMNS * self._widest_swatch()
+            + (SWATCH_COLUMNS - 1) * self._grid.spacing()
+        )
+
+    def _apply(self, columns: int) -> None:
+        if columns == self._columns:
+            return
+        self._columns = columns
+        for swatch in self._swatches:
+            self._grid.removeWidget(swatch)
+        for index, swatch in enumerate(self._swatches):
+            self._grid.addWidget(swatch, index // columns, index % columns)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().resizeEvent(event)
+        self._apply(self.columns_for(self.width()))
+
+    def refresh_metrics(self) -> None:
+        """Re-evaluate the column count after a font or DPI change."""
+        self._apply(self.columns_for(self.width()))
 
 
 def _section(text: str) -> QLabel:
@@ -179,13 +295,22 @@ class SettingsPanel(QWidget):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Vertical scrolling is the escape valve when the content is taller than
+        # the window; horizontally there is nowhere to go, so everything inside
+        # must be able to shrink or wrap instead.
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._scroll = scroll
 
         content = QWidget()
-        content.setMinimumWidth(PANEL_WIDTH - 16)
+        # Deliberately no minimum width. Pinning one here is what used to force
+        # the content wider than the viewport and clip it, since the panel's own
+        # width is decided by sizeHint rather than by that constant.
+        self._content = content
         body = QVBoxLayout(content)
         body.setContentsMargins(18, 18, 18, 24)
         body.setSpacing(14)
+        self._body_margins = body.contentsMargins()
 
         title = QLabel("Preferences")
         title.setObjectName("panelTitle")
@@ -194,15 +319,13 @@ class SettingsPanel(QWidget):
 
         # ------------------------------------------------------------ theme
         body.addWidget(_section("Theme"))
-        grid = QGridLayout()
-        grid.setSpacing(8)
         self._swatches: list[_Swatch] = []
-        for index, palette in enumerate(PALETTES.values()):
+        for palette in PALETTES.values():
             swatch = _Swatch(palette)
             swatch.clicked.connect(self.theme_selected.emit)
-            grid.addWidget(swatch, index // 2, index % 2)
             self._swatches.append(swatch)
-        body.addLayout(grid)
+        self._grid = _SwatchGrid(self._swatches, spacing=8)
+        body.addWidget(self._grid)
         body.addWidget(_separator())
 
         # ----------------------------------------------------------- typography
@@ -262,6 +385,46 @@ class SettingsPanel(QWidget):
         outer.addWidget(scroll)
 
         self.set_theme(settings.theme)
+
+    # ---------------------------------------------------------------- sizing
+    def preferred_width(self) -> int:
+        """The width at which nothing in the drawer is clipped.
+
+        Computed from the content every time it is asked for, rather than
+        stored as a constant, because all three inputs move underneath us: the
+        UI font size is a user preference, the system font differs per platform,
+        and the whole lot rescales when the window moves to a monitor at another
+        DPI.  A number that is correct on one of those combinations is wrong on
+        the next, which is exactly how the panel came to clip on Windows.
+
+        The result is the widest of what the content genuinely needs, floored by
+        the design's intended proportions, plus room for the scrollbar.
+        """
+        metrics = QFontMetrics(self.font())
+        margins = self._body_margins.left() + self._body_margins.right()
+
+        # What the design wants: a comfortable text column, and a swatch grid
+        # wide enough to stay in two columns.
+        text_column = metrics.averageCharWidth() * TEXT_COLUMN_CHARS
+        design = margins + max(text_column, self._grid.natural_width())
+
+        # What the content will not go below without clipping — the widest
+        # control that cannot wrap or shrink, such as the longest checkbox.
+        required = self._content.minimumSizeHint().width()
+
+        return max(design, required) + self._scrollbar_allowance()
+
+    def _scrollbar_allowance(self) -> int:
+        """Room for the vertical scrollbar, which overlays nothing on Qt."""
+        bar = self._scroll.verticalScrollBar()
+        return bar.sizeHint().width() if bar is not None else 0
+
+    def refresh_metrics(self) -> None:
+        """Recompute layout decisions after a font or DPI change."""
+        for swatch in self._swatches:
+            swatch.updateGeometry()
+        self._grid.refresh_metrics()
+        self.updateGeometry()
 
     @staticmethod
     def _checkbox(text: str, checked: bool) -> QCheckBox:

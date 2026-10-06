@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Windows VERSIONINFO resource, compiled into Emdee.exe by PyInstaller.
+# This is what the file's Properties > Details tab shows, and what SmartScreen
+# quotes when it warns about an unsigned download — so it is worth being
+# accurate rather than leaving PyInstaller's placeholder text in place.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0),
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '040904B0',
+        [
+          StringStruct('CompanyName', 'Adrià Bonnin Catalán'),
+          StringStruct('FileDescription', 'Emdee — a themeable Markdown editor'),
+          StringStruct('FileVersion', '1.0.0.0'),
+          StringStruct('InternalName', 'emdee'),
+          StringStruct('LegalCopyright',
+                       'Copyright (C) 2026 Adrià Bonnin Catalán. '
+                       'GNU General Public License v3 or later.'),
+          StringStruct('OriginalFilename', 'Emdee.exe'),
+          StringStruct('ProductName', 'Emdee'),
+          StringStruct('ProductVersion', '1.0.0'),
+        ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)

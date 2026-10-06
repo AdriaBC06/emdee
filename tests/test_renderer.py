@@ -12,6 +12,8 @@ from app.core.page import build_page, svg_data_uri
 from app.core.renderer import MarkdownRenderer, inline_local_images, slugify
 from app.themes.palettes import PALETTES
 
+from .conftest import requires_symlinks
+
 
 @pytest.fixture(scope="module")
 def renderer() -> MarkdownRenderer:
@@ -209,6 +211,7 @@ def test_inline_local_images_refuses_files_outside_the_document_folder(
     assert "base64" not in out
 
 
+@requires_symlinks
 def test_inline_local_images_refuses_symlinks_escaping_the_folder(tmp_path: Path) -> None:
     secret = tmp_path / "secret.png"
     secret.write_bytes(b"\x89PNG\r\n\x1a\ntop-secret")

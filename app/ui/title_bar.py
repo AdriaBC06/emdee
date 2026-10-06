@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Frameless-window title bar in the PyDracula style.
 
-Window dragging and resizing use ``QWindow.startSystemMove`` /
-``startSystemResize`` rather than manual geometry arithmetic.  That is the only
-approach that works on Wayland, where a client is not allowed to position its
-own surface — and it also gives correct edge snapping on X11 for free.
+Dragging is handed to the platform rather than done with manual geometry
+arithmetic, but *which* platform mechanism differs:
+
+* On Linux, ``QWindow.startSystemMove`` asks the compositor to take over.  It
+  is the only approach that works on Wayland, where a client may not position
+  its own surface, and it gives correct edge snapping on X11 for free.
+* On Windows the window keeps its real frame and reports this widget as
+  ``HTCAPTION`` from the hit test (see :mod:`app.ui.win_chrome`), so the
+  desktop drags, snaps and shows the system menu with no help from us.  Calling
+  ``startSystemMove`` there as well would start a *second*, competing drag.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .. import APP_NAME
+from ..platform_support import uses_native_frame_hit_testing
 from .icons import logo_pixmap, themed_icon
 
 __all__ = ["TitleBar"]
@@ -111,8 +118,28 @@ class TitleBar(QWidget):
         )
         self._buttons["x"].setIcon(themed_icon("x", close_color, 16))
 
+    @property
+    def window_buttons(self) -> list[QPushButton]:
+        """The minimise/maximise/close buttons, in layout order.
+
+        Platform chrome needs to know about these: on Windows they have to be
+        carved out of the draggable caption region, or the hit test claims them
+        and they stop responding to clicks.
+        """
+        return [self._buttons[key] for key in ("minus", "maximize", "x")]
+
+    @property
+    def maximize_button(self) -> QPushButton:
+        """The maximise button, which Snap Layouts needs to locate by rectangle."""
+        return self._buttons["maximize"]
+
     # --------------------------------------------------------------- events
     def mousePressEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt API
+        if uses_native_frame_hit_testing():
+            # The hit test already reported this widget as the caption; Windows
+            # is running the drag itself and must not be interrupted.
+            super().mousePressEvent(event)
+            return
         if event is not None and event.button() == Qt.MouseButton.LeftButton:
             window = self.window().windowHandle()
             if window is not None:
@@ -122,6 +149,11 @@ class TitleBar(QWidget):
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt API
+        if uses_native_frame_hit_testing():
+            # Double-click-to-maximise on a caption is a system behaviour; it
+            # arrives as WM_NCLBUTTONDBLCLK and never reaches this widget.
+            super().mouseDoubleClickEvent(event)
+            return
         if event is not None and event.button() == Qt.MouseButton.LeftButton:
             self.maximize_requested.emit()
             event.accept()

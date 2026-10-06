@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import QApplication
 from . import APP_ID, APP_NAME, APP_ORG, APP_TAGLINE, APP_VERSION
 from .core.settings import Settings
 from .paths import PROJECT_ROOT
+from .platform_support import set_app_user_model_id
 from .themes.manager import ThemeManager
 from .ui.icons import app_icon
 from .ui.main_window import MainWindow
@@ -106,6 +107,10 @@ def main(argv: list[str] | None = None) -> int:
     QCoreApplication.setOrganizationName(APP_ORG)
     QCoreApplication.setApplicationVersion(APP_VERSION)
     QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeMenuBar, True)
+
+    # Must happen before the first window exists, or the taskbar has already
+    # decided this process is "some Python program" and shown its icon.
+    set_app_user_model_id(f"{APP_ORG}.{APP_NAME}.{APP_VERSION}")
 
     app = QApplication(sys.argv[:1])
     # Matches StartupWMClass in the .desktop file so the launcher can group us.

@@ -14,7 +14,13 @@ wheels/
 *.egg
 .eggs/
 MANIFEST
+# PyInstaller writes a .spec next to whatever it is told to build, and those
+# generated ones are throwaway. The Windows spec is hand-written and is the
+# actual build definition, so it is exempted below rather than left to be
+# ignored in silence — the failure mode is a release workflow that cannot find
+# its own build file.
 *.spec
+!packaging/windows/*.spec
 
 # Virtual environments
 .venv/
