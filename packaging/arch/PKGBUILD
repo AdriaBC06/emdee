@@ -24,7 +24,7 @@ depends=(
 )
 checkdepends=('python-pytest')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('49a61968c29a79ace704691172d29f68997194ea5256c7343dc036043287743d')
 
 check() {
     cd "$pkgname-$pkgver"
