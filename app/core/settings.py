@@ -59,6 +59,7 @@ DEFAULTS: dict[str, Any] = {
     "first_run_done": False,
     "split_sizes": [],
     "file_panel_width": 258,
+    "gif_pdf_notice_shown": False,
 }
 
 
@@ -218,6 +219,15 @@ class Settings:
     @file_panel_width.setter
     def file_panel_width(self, value: int) -> None:
         self._set("file_panel_width", int(value))
+
+    @property
+    def gif_pdf_notice_shown(self) -> bool:
+        """Whether the "GIFs export as a still frame" notice has been shown."""
+        return _as_bool(self._get("gif_pdf_notice_shown"), False)
+
+    @gif_pdf_notice_shown.setter
+    def gif_pdf_notice_shown(self, value: bool) -> None:
+        self._set("gif_pdf_notice_shown", bool(value))
 
     @property
     def native_decorations(self) -> bool:

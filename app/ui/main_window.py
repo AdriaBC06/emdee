@@ -63,6 +63,7 @@ from ..core import file_service
 from ..core import page as page_builder
 from ..core.document import Document
 from ..core.file_service import MARKDOWN_SUFFIXES, FileError
+from ..core.gif import animated_gif_sources
 from ..core.renderer import MarkdownRenderer, inline_local_images
 from ..core.settings import Settings, ViewMode
 from ..paths import app_logo
@@ -1424,6 +1425,33 @@ class MainWindow(QMainWindow):
             return
         page.pdfPrintingFinished.connect(finished)
         QTimer.singleShot(250, lambda: page.printToPdf(str(target), layout))
+        self._notice_animated_gifs()
+
+    def _notice_animated_gifs(self) -> None:
+        """Say once that animated GIFs come out of the PDF as a still frame.
+
+        PDF has no animation, so this is inherent rather than a bug — but a
+        document that moves in the preview should not lose its motion silently.
+        Only fires when the document really contains an animated GIF, and the
+        dialog is non-modal so the export carries on underneath it.
+        """
+        if self._settings.gif_pdf_notice_shown:
+            return
+        body = self._renderer.render(self._document.text).html
+        if not animated_gif_sources(body, self._preview_base_dir()):
+            return
+        self._settings.gif_pdf_notice_shown = True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Animated GIFs in PDF")
+        box.setText("Animated GIFs are exported as a single still frame.")
+        box.setInformativeText(
+            "PDF does not support animation. This notice will not be shown again."
+        )
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        box.setModal(False)
+        box.show()
 
     # ============================================================ preferences
     def _set_editor_font(self, size: int) -> None:
