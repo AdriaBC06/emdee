@@ -51,7 +51,7 @@ A desktop Markdown editor built around one idea: **plain text on the left, a
 real browser engine on the right, and one set of colours driving both.**
 
 Write in a syntax-highlighted plain-text editor, watch a properly styled preview
-update as you type, and switch between six themes without restarting anything.
+update as you type, and switch between eight themes without restarting anything.
 Export what you see to a self-contained HTML file or a PDF.
 
 <div align="center">
@@ -118,7 +118,7 @@ Export what you see to a self-contained HTML file or a PDF.
 
 **Themes**
 
-- 🎛 Six palettes, hot-swappable, all generated from **one** set of colour tokens
+- 🎛 Eight palettes, hot-swappable, all generated from **one** set of colour tokens
 - ♿ Every text colour is contrast-corrected to WCAG AA (≥ 4.5:1) — and there is
   [a test](tests/test_contrast.py) that fails if a palette ever regresses
 
@@ -126,9 +126,10 @@ Export what you see to a self-contained HTML file or a PDF.
 
 ## 🎨 Theme gallery
 
-Six palettes, switched from the preferences drawer with no restart. Every shot
+Eight palettes, switched from the preferences drawer with no restart. Every shot
 below is the same document at the same scroll position, so only the colour
-changes.
+changes. The newest pair, **Teal Diva Night** and **Teal Diva Day**, is listed
+in the palette table below.
 
 <table>
 <tr>
@@ -182,6 +183,8 @@ Swatches are `bg` · `surface` · `text` · `accent` · `accent2` · `green`.
 | **Catppuccin Frappé** | dark | ![](https://img.shields.io/badge/-303446-303446?style=flat-square) ![](https://img.shields.io/badge/-414559-414559?style=flat-square) ![](https://img.shields.io/badge/-c6d0f5-c6d0f5?style=flat-square) ![](https://img.shields.io/badge/-ca9ee6-ca9ee6?style=flat-square) ![](https://img.shields.io/badge/-f4b8e4-f4b8e4?style=flat-square) ![](https://img.shields.io/badge/-a6d189-a6d189?style=flat-square) | `#303446` · `#ca9ee6` · `#f4b8e4` |
 | **Rosé Pine Dawn** | light | ![](https://img.shields.io/badge/-faf4ed-faf4ed?style=flat-square) ![](https://img.shields.io/badge/-f2e9e1-f2e9e1?style=flat-square) ![](https://img.shields.io/badge/-575279-575279?style=flat-square) ![](https://img.shields.io/badge/-907aa9-907aa9?style=flat-square) ![](https://img.shields.io/badge/-d7827e-d7827e?style=flat-square) ![](https://img.shields.io/badge/-56949f-56949f?style=flat-square) | `#faf4ed` · `#907aa9` · `#d7827e` |
 | **Nord** | dark | ![](https://img.shields.io/badge/-2e3440-2e3440?style=flat-square) ![](https://img.shields.io/badge/-434c5e-434c5e?style=flat-square) ![](https://img.shields.io/badge/-eceff4-eceff4?style=flat-square) ![](https://img.shields.io/badge/-88c0d0-88c0d0?style=flat-square) ![](https://img.shields.io/badge/-b48ead-b48ead?style=flat-square) ![](https://img.shields.io/badge/-a3be8c-a3be8c?style=flat-square) | `#2e3440` · `#88c0d0` · `#b48ead` |
+| **Teal Diva Night** | dark | ![](https://img.shields.io/badge/-191d22-191d22?style=flat-square) ![](https://img.shields.io/badge/-232a31-232a31?style=flat-square) ![](https://img.shields.io/badge/-e6f4f3-e6f4f3?style=flat-square) ![](https://img.shields.io/badge/-39c5bb-39c5bb?style=flat-square) ![](https://img.shields.io/badge/-ff5fa8-ff5fa8?style=flat-square) ![](https://img.shields.io/badge/-7fe0b0-7fe0b0?style=flat-square) | `#191d22` · `#39c5bb` · `#ff5fa8` |
+| **Teal Diva Day** | light | ![](https://img.shields.io/badge/-f4fbfb-f4fbfb?style=flat-square) ![](https://img.shields.io/badge/-dcefee-dcefee?style=flat-square) ![](https://img.shields.io/badge/-1e2a2f-1e2a2f?style=flat-square) ![](https://img.shields.io/badge/-13968d-13968d?style=flat-square) ![](https://img.shields.io/badge/-c81d77-c81d77?style=flat-square) ![](https://img.shields.io/badge/-1f8a5b-1f8a5b?style=flat-square) | `#f4fbfb` · `#13968d` · `#c81d77` |
 
 Some published `muted` values (Dracula's `#6272a4`, for one) do not reach 4.5:1
 against their own background. Emdee keeps the literal palette in
@@ -281,6 +284,17 @@ The four in bold are the ones most commonly missed, because several
 distributions ship them separately from the main PyQt6 or Markdown packages.
 
 #### Arch Linux
+
+A `PKGBUILD` is included, which installs Emdee system-wide with its
+dependencies from the official repositories:
+
+```bash
+git clone https://github.com/AdriaBC06/emdee.git
+cd emdee/packaging/arch
+makepkg -si
+```
+
+Or run it straight from the clone:
 
 ```bash
 sudo pacman -S python-pyqt6 python-pyqt6-webengine qt6-svg \
@@ -601,7 +615,7 @@ emdee/
 │   │   ├── sanitize.py          #    nh3/ammonia policy for untrusted HTML
 │   │   └── settings.py          #    typed QSettings wrapper (QtCore only)
 │   ├── themes/
-│   │   ├── palettes.py          #    the six palettes — the only place colours live
+│   │   ├── palettes.py          #    the eight palettes — the only place colours live
 │   │   ├── contrast.py          #    WCAG maths + the readability corrector
 │   │   ├── qss_template.py      #    application stylesheet template
 │   │   ├── preview_css.py       #    preview / export / print stylesheet template
@@ -688,13 +702,13 @@ editor whose entire job is showing formatted documents, that is the right trade.
 
 A theme has to reach four places at once: the Qt stylesheet, the preview CSS,
 the editor's syntax highlighter and the Pygments code style. Maintaining those
-by hand means six themes × four stylesheets = 24 files to keep in sync, and they
+by hand means eight themes × four stylesheets = 32 files to keep in sync, and they
 *will* drift.
 
 Instead, [`palettes.py`](app/themes/palettes.py) holds twelve colours per theme
 and everything else is derived: hover tints, selection backgrounds, code
 backgrounds, and — importantly — contrast-corrected foregrounds for each
-surface. Adding a seventh theme means adding twelve hex codes. Nothing else.
+surface. Adding a ninth theme means adding twelve hex codes. Nothing else.
 
 It also makes accessibility testable rather than aspirational: because the
 corrections happen in one function, [one test](tests/test_contrast.py) can walk
@@ -714,7 +728,7 @@ Rather than vendor a generated file from the other binding, Emdee loads every
 asset from disk through [`resource_path()`](app/paths.py), which also understands
 PyInstaller's `sys._MEIPASS`. The bonus: icons are plain SVG files whose
 `currentColor` is substituted at load time, which is what lets one icon set
-serve six themes.
+serve every theme.
 
 </details>
 

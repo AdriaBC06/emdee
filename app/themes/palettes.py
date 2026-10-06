@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The six Emdee colour palettes, defined once as colour tokens.
+"""The eight Emdee colour palettes, defined once as colour tokens.
 
 This module is the single source of truth for colour in the whole application.
 The application stylesheet (QSS), the HTML preview stylesheet, the editor syntax
@@ -259,6 +259,43 @@ PALETTES: dict[str, Palette] = {
         yellow="#ebcb8b",
         red="#bf616a",
         cyan="#8fbcbb",
+    ),
+    # Original pair inspired by a certain twin-tailed virtual singer: the
+    # signature teal, the pink of the "01" mark and the charcoal grey of the
+    # sleeves, on a stage at night and a soundcheck by day.
+    "teal-diva-night": Palette(
+        key="teal-diva-night",
+        name="Teal Diva Night",
+        is_dark=True,
+        bg="#191d22",
+        bg_alt="#14171b",
+        surface="#232a31",
+        border="#2f3b44",
+        text="#e6f4f3",
+        muted="#7fa6ab",
+        accent="#39c5bb",
+        accent2="#ff5fa8",
+        green="#7fe0b0",
+        yellow="#f6d77a",
+        red="#ff6b81",
+        cyan="#86cecb",
+    ),
+    "teal-diva-day": Palette(
+        key="teal-diva-day",
+        name="Teal Diva Day",
+        is_dark=False,
+        bg="#f4fbfb",
+        bg_alt="#e9f6f5",
+        surface="#dcefee",
+        border="#bcd9d7",
+        text="#1e2a2f",
+        muted="#5a7378",
+        accent="#13968d",
+        accent2="#c81d77",
+        green="#1f8a5b",
+        yellow="#a06a00",
+        red="#c8324a",
+        cyan="#1b7fa3",
     ),
 }
 

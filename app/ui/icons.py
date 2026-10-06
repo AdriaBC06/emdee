@@ -4,7 +4,7 @@
 PyQt6 has no ``pyrcc6``, so the ``.qrc`` machinery of the original PyDracula
 template was removed entirely.  Icons are plain SVG files on disk whose
 ``currentColor`` placeholder is substituted with the active theme colour before
-rasterisation, which is what lets a single icon set serve six themes.
+rasterisation, which is what lets a single icon set serve every theme.
 """
 
 from __future__ import annotations

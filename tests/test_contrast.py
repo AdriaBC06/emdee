@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Accessibility guarantees for the six themes.
+"""Accessibility guarantees for the eight themes.
 
 Every colour pair that ends up as text-on-a-surface anywhere in the QSS or the
 preview CSS is checked against WCAG AA (4.5:1).  If a palette ever regresses,
@@ -127,7 +127,7 @@ def test_palette_tokens_are_all_valid_colours(palette: Palette) -> None:
         hex_to_rgb(value)
 
 
-def test_all_six_themes_are_present() -> None:
+def test_all_eight_themes_are_present() -> None:
     assert list(PALETTES) == [
         "dracula",
         "clean-light",
@@ -135,5 +135,7 @@ def test_all_six_themes_are_present() -> None:
         "catppuccin-frappe",
         "rose-pine-dawn",
         "nord",
+        "teal-diva-night",
+        "teal-diva-day",
     ]
-    assert sum(1 for p in ALL_PALETTES if p.is_dark) == 3
+    assert sum(1 for p in ALL_PALETTES if p.is_dark) == 4
