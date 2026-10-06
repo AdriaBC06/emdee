@@ -55,9 +55,23 @@ def _configure_logging(verbose: bool) -> None:
         format="%(asctime)s  %(levelname)-7s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+
+def _configure_chromium(verbose: bool) -> None:
+    """Set the Chromium flags; must run before the QApplication exists."""
+    flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").split()
     # Chromium is chatty on stderr; keep it out of our log unless asked.
-    if not verbose:
-        os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--log-level=3")
+    if not verbose and not any(f.startswith("--log-level") for f in flags):
+        flags.append("--log-level=3")
+    # Chromium may hand Qt Vulkan textures while Qt composites the view with
+    # OpenGL (seen on KDE Plasma / Wayland with RADV): Qt cannot use them and
+    # the preview stays blank, logging "Backend texture is not a Vulkan
+    # texture".  Compositing the page in software sidesteps the mismatch on
+    # every driver, and a Markdown preview has nothing that needs the GPU.
+    # EMDEE_GPU_COMPOSITING=1 opts back in.
+    if os.environ.get("EMDEE_GPU_COMPOSITING") != "1" and "--disable-gpu-compositing" not in flags:
+        flags.append("--disable-gpu-compositing")
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join(flags)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -102,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     """Create the application, restore the session and run the event loop."""
     args = _parse_args(list(argv if argv is not None else sys.argv[1:]))
     _configure_logging(args.verbose)
+    _configure_chromium(args.verbose)
 
     QCoreApplication.setApplicationName(APP_NAME)
     QCoreApplication.setOrganizationName(APP_ORG)
