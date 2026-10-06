@@ -135,10 +135,49 @@ jobs:
             dist/SHA256SUMS.txt
           if-no-files-found: error
 
+  appimage:
+    name: Build Linux AppImage
+    # The oldest supported runner, so the tools the build downloads run; the
+    # bundle itself targets glibc 2.28+ through its manylinux base image.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build
+        run: packaging/linux/build-appimage.sh
+
+      - name: Smoke-test the AppImage
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libxkbcommon0 libnss3 libxcomposite1 \
+            libxdamage1 libxrandr2 libxtst6 libasound2 libfontconfig1 libdbus-1-3 >/dev/null
+          image=$(ls dist/Emdee-*-x86_64.AppImage)
+          "$image" --appimage-extract-and-run --version
+          QT_QPA_PLATFORM=offscreen timeout 25 "$image" --appimage-extract-and-run \
+            --size 800x600 > smoke.log 2>&1 || status=$?
+          cat smoke.log
+          # timeout's 124 means it was still running, which is the success case.
+          if [ "${status:-0}" != "124" ]; then
+            echo "AppImage exited early with status ${status:-0}" >&2
+            exit 1
+          fi
+          grep -q "started" smoke.log
+
+      - name: Checksum
+        run: cd dist && sha256sum Emdee-*-x86_64.AppImage > SHA256SUMS-linux.txt && cat SHA256SUMS-linux.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emdee-appimage
+          path: |
+            dist/Emdee-*-x86_64.AppImage
+            dist/SHA256SUMS-linux.txt
+          if-no-files-found: error
+
   publish:
     name: Publish release
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, appimage]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v4
@@ -146,12 +185,26 @@ jobs:
           name: emdee-windows-${{ needs.build.outputs.version }}
           path: dist
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: emdee-appimage
+          path: dist
+
+      - name: Merge the checksum files
+        # One SHA256SUMS.txt covering every download, so `sha256sum -c` works
+        # whichever ones a reader fetched (with --ignore-missing).
+        run: |
+          cat dist/SHA256SUMS-linux.txt >> dist/SHA256SUMS.txt
+          rm dist/SHA256SUMS-linux.txt
+          cat dist/SHA256SUMS.txt
+
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/Emdee-*-windows-x64.zip
             dist/Emdee-*-setup.exe
+            dist/Emdee-*-x86_64.AppImage
             dist/SHA256SUMS.txt
           draft: true
           generate_release_notes: true
@@ -200,6 +253,8 @@ jobs:
 
             ## Linux
 
+            **Any distribution (x86_64, glibc 2.28+):** download `Emdee-${{ needs.build.outputs.version }}-x86_64.AppImage`, then `chmod +x Emdee-*.AppImage` and run it. Everything — Python, Qt and the browser engine — is inside. If your system has no FUSE 2 (`libfuse2`), run it with `--appimage-extract-and-run`.
+
             **Arch Linux:** a `PKGBUILD` lives in [`packaging/arch`](https://github.com/AdriaBC06/emdee/tree/main/packaging/arch). From a clone, `cd packaging/arch && makepkg -si` builds this release and installs it with its dependencies from the official repositories.
 
-            Any other distribution: run from source — see [Installation](https://github.com/AdriaBC06/emdee#installation).
+            Or run from source — see [Installation](https://github.com/AdriaBC06/emdee#installation).
