@@ -1,0 +1,59 @@
+# Maintainer: Adrià Bonnin Catalán <adriabc06@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Build from this directory:  makepkg -si
+pkgname=emdee
+pkgver=1.0.1
+pkgrel=1
+pkgdesc="A fast, themeable Markdown editor with a live preview"
+arch=('any')
+url="https://github.com/AdriaBC06/emdee"
+license=('GPL-3.0-or-later')
+# qt6-svg is only an *optional* dependency of python-pyqt6, but every icon in
+# the UI goes through PyQt6.QtSvg, so it has to be named here.
+depends=(
+    'python'
+    'python-pyqt6'
+    'python-pyqt6-webengine'
+    'qt6-svg'
+    'python-markdown-it-py'
+    'python-mdit_py_plugins'
+    'python-linkify-it-py'
+    'python-pygments'
+    'python-nh3'
+)
+checkdepends=('python-pytest')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+check() {
+    cd "$pkgname-$pkgver"
+    QT_QPA_PLATFORM=offscreen python -m pytest -q tests/test_renderer.py \
+        tests/test_sanitize.py tests/test_textops.py tests/test_gif.py \
+        tests/test_contrast.py
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+
+    # The top-level package is called "app", far too generic for
+    # site-packages, so it lives in a private directory instead.
+    install -d "$pkgdir/usr/share/$pkgname"
+    cp -r app "$pkgdir/usr/share/$pkgname/"
+    find "$pkgdir/usr/share/$pkgname" -name '__pycache__' -prune -exec rm -rf {} +
+    python -m compileall -q -d "/usr/share/$pkgname" "$pkgdir/usr/share/$pkgname"
+    install -Dm644 WELCOME.md "$pkgdir/usr/share/$pkgname/WELCOME.md"
+
+    install -Dm755 /dev/stdin "$pkgdir/usr/bin/$pkgname" <<'LAUNCHER'
+#!/bin/sh
+exec env PYTHONPATH="/usr/share/emdee${PYTHONPATH:+:$PYTHONPATH}" python -m app.main "$@"
+LAUNCHER
+
+    install -Dm644 "packaging/$pkgname.desktop" \
+        "$pkgdir/usr/share/applications/$pkgname.desktop"
+    (cd packaging/icons && find hicolor -type f \( -name '*.png' -o -name '*.svg' \) \
+        -exec install -Dm644 {} "$pkgdir/usr/share/icons/{}" \;)
+
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 NOTICE "$pkgdir/usr/share/licenses/$pkgname/NOTICE"
+}

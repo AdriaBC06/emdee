@@ -200,4 +200,6 @@ jobs:
 
             ## Linux
 
-            Run from source — see [Installation](https://github.com/AdriaBC06/emdee#installation). No binary packaging yet.
+            **Arch Linux:** a `PKGBUILD` lives in [`packaging/arch`](https://github.com/AdriaBC06/emdee/tree/main/packaging/arch). From a clone, `cd packaging/arch && makepkg -si` builds this release and installs it with its dependencies from the official repositories.
+
+            Any other distribution: run from source — see [Installation](https://github.com/AdriaBC06/emdee#installation).
