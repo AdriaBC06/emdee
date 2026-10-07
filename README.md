@@ -12,7 +12,7 @@
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-bd93f9?style=flat-square)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-supported-ff79c6?style=flat-square&logo=linux&logoColor=white)](#linux)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-8be9fd?style=flat-square&logo=windows&logoColor=white)](#windows)
-[![Tests](https://img.shields.io/badge/tests-179%20passing-50fa7b?style=flat-square)](tests)
+[![Tests](https://img.shields.io/badge/tests-232%20passing-50fa7b?style=flat-square)](tests)
 [![Download](https://img.shields.io/github/v/release/AdriaBC06/emdee?style=flat-square&label=download&color=bd93f9)](../../releases/latest)
 
 </div>
@@ -108,6 +108,22 @@ Export what you see to a self-contained HTML file or a PDF.
   dirty here, it asks
 - 🕘 Recent files, drag & drop, UTF-8 everywhere with explicit error handling —
   never a traceback in your face
+
+**Linked notes** — an Obsidian-style graph of a folder of notes
+
+- 🔗 `[[Wiki links]]` between notes — `[[Note]]`, `[[Note|shown text]]`,
+  `[[Note#Heading]]`, `[[folder/Note]]` and image embeds `![[figure.png]]` —
+  resolved by file name anywhere in the folder, or by front-matter `aliases`
+- ✍️ Typing `[[` offers every note in the folder; clicking a link opens the
+  note, and clicking a link to a note that does not exist yet **creates** it
+- 🕸 **Graph view** (`Ctrl+G`): every note a dot, every link a line, laid out
+  by a live force simulation. Click to open, drag to rearrange, wheel to zoom,
+  *Local* to show only the current note's neighbours. Links to notes that do
+  not exist yet are dashed nodes
+- ↩️ **Backlinks** under the graph: every note that points at the one you are
+  reading
+- 🔄 The folder is re-indexed in the background, so notes written by another
+  program — a sync client, or an AI agent — appear in the graph within seconds
 
 **Output**
 
@@ -430,6 +446,28 @@ emdee --verbose            # debug logging
 emdee --size 1440x900      # exact window size (reproducible screenshots)
 ```
 
+### Linked notes from the command line — and for AI agents
+
+The same index that drives the graph is available without a window, so a
+script or an AI coding agent (Claude Code, Codex…) can generate notes and then
+verify they connect:
+
+```bash
+emdee vault check ~/apuntes              # broken [[links]] and orphan notes (exit 1 if broken)
+emdee vault check ~/apuntes --json       # the same, machine-readable
+emdee vault graph ~/apuntes              # nodes + edges as JSON (--format dot|mermaid)
+emdee vault backlinks ~/apuntes Mitosis  # who links to a note
+emdee vault links ~/apuntes Mitosis      # where a note's links resolve
+emdee vault init ~/apuntes               # write AGENTS.md + CLAUDE.md with note conventions
+```
+
+`vault init` drops an `AGENTS.md` into the folder (and a one-line `CLAUDE.md`
+that imports it) describing how notes are written here — one concept per note,
+`[[links]]` for every related concept, an index note per subject — and telling
+the agent to run `emdee vault check` when it is done. Start an agent in that
+folder, keep Emdee open on it with the graph showing, and watch the concept
+map grow as it writes. From a source checkout, use `python -m app.cli vault …`.
+
 On first launch Emdee opens `WELCOME.md`, a document that exercises every
 supported Markdown feature.
 
@@ -460,6 +498,7 @@ supported Markdown feature.
 | `Ctrl+Shift+2` | Split view |
 | `Ctrl+Shift+3` | Preview only |
 | `F9` | Toggle explorer |
+| `Ctrl+G` | Toggle graph view |
 | `F10` | Toggle preferences |
 | `Ctrl+=` / `Ctrl+-` | Editor font size |
 | `F1` | About |
@@ -605,6 +644,7 @@ The security tests live in
 emdee/
 ├── app/
 │   ├── main.py                  # entry point, GPL header, CLI
+│   ├── cli.py                   # `emdee vault …` — graph tools for scripts and agents
 │   ├── paths.py                 # resource_path() — PyInstaller-aware, no .qrc
 │   ├── core/                    # ── zero PyQt6.QtWidgets imports ──
 │   │   ├── document.py          #    text buffer + dirty-state tracking
@@ -613,6 +653,7 @@ emdee/
 │   │   ├── file_service.py      #    atomic I/O, UTF-8, human-readable errors
 │   │   ├── page.py              #    self-contained HTML document assembly
 │   │   ├── sanitize.py          #    nh3/ammonia policy for untrusted HTML
+│   │   ├── vault.py             #    [[wiki links]], backlinks, note graph (pure Python)
 │   │   └── settings.py          #    typed QSettings wrapper (QtCore only)
 │   ├── themes/
 │   │   ├── palettes.py          #    the eight palettes — the only place colours live
@@ -628,6 +669,7 @@ emdee/
 │   │   ├── highlighter.py       #    QSyntaxHighlighter for Markdown
 │   │   ├── preview.py           #    QWebEngineView + QWebChannel scroll sync
 │   │   ├── file_tree.py         #    Markdown-filtered explorer
+│   │   ├── graph_view.py        #    force-directed note graph + backlinks
 │   │   ├── find_replace.py      #    inline find/replace with regex
 │   │   ├── settings_panel.py    #    sliding preferences drawer
 │   │   ├── toolbar.py           #    reusable icon strips
@@ -635,7 +677,7 @@ emdee/
 │   │   └── about.py             #    version, licence, credits
 │   └── resources/icons/
 │       ├── app/                 #    logo.svg, logo-small.svg, logo-mono.svg
-│       └── ui/                  #    39 hand-written interface icons
+│       └── ui/                  #    40 hand-written interface icons
 ├── packaging/
 │   ├── emdee.desktop            # freedesktop Desktop Entry
 │   ├── icons/hicolor/           # generated PNG + SVG icon theme
@@ -653,7 +695,7 @@ emdee/
 │   └── release.yml              # tagged builds published to a Release
 ├── tools/build_icons.py         # SVG → every size and the .ico, in one command
 ├── pyproject.toml               # pytest + ruff configuration
-├── tests/                       # 179 tests, no QApplication required
+├── tests/                       # 232 tests, no QApplication required
 ├── screenshots/                 # images used by this README
 ├── WELCOME.md                   # feature-complete demo document
 ├── requirements.txt

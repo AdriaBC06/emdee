@@ -11,9 +11,12 @@ them to widgets and to the user's intent.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from PyQt6.QtCore import (
     QBuffer,
@@ -64,8 +67,9 @@ from ..core import page as page_builder
 from ..core.document import Document
 from ..core.file_service import MARKDOWN_SUFFIXES, FileError
 from ..core.gif import animated_gif_sources
-from ..core.renderer import MarkdownRenderer, inline_local_images
+from ..core.renderer import MarkdownRenderer, WikiTarget, inline_local_images, slugify
 from ..core.settings import Settings, ViewMode
+from ..core.vault import NOTE_SUFFIXES, Link, Vault
 from ..paths import app_logo
 from ..platform_support import uses_native_frame_hit_testing
 from ..themes.manager import ThemeManager
@@ -73,6 +77,7 @@ from .about import AboutDialog
 from .editor import MarkdownEditor
 from .file_tree import FileTree
 from .find_replace import FindReplacePanel
+from .graph_view import GraphView
 from .highlighter import MarkdownHighlighter
 from .icons import app_icon, themed_icon
 from .preview import MarkdownPreview
@@ -100,6 +105,9 @@ MIN_EDITOR_WIDTH = 240
 MIN_PANEL_WIDTH = 200
 ANIMATION_MS = 180
 SYNC_GUARD_MS = 140
+#: How often the open folder is re-scanned for notes changed by other programs
+#: (an AI agent writing notes, a sync client…).  Backs off on huge folders.
+VAULT_REFRESH_MS = 2000
 
 _MARKDOWN_FILTER = (
     "Markdown documents (*.md *.markdown *.mdown *.mkd *.mdx);;"
@@ -212,6 +220,11 @@ class MainWindow(QMainWindow):
         self._sync_guard = False
         self._reload_pending = False
         self._view_mode = settings.view_mode
+        self._vault: Vault | None = None
+        self._renderer.wiki_resolver = self._resolve_wikilink
+        self._vault_timer = QTimer(self)
+        self._vault_timer.setSingleShot(True)
+        self._vault_timer.timeout.connect(self._refresh_vault)
 
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
@@ -356,6 +369,7 @@ class MainWindow(QMainWindow):
         self.act_toggle_settings = self._toggle_action(
             "Preferences", self.toggle_settings_panel, "F10"
         )
+        self.act_toggle_graph = self._toggle_action("Graph", self.toggle_graph, "Ctrl+G")
         self.act_about = self._action("About", self.show_about, "F1")
         self.act_zoom_in = self._action("Increase font size", lambda: self._nudge_font(1), "Ctrl+=")
         self.act_zoom_out = self._action("Decrease font size", lambda: self._nudge_font(-1), "Ctrl+-")
@@ -447,6 +461,7 @@ class MainWindow(QMainWindow):
 
         for action, icon in (
             (self.act_toggle_files, "folder"),
+            (self.act_toggle_graph, "graph"),
             (self.act_new, "file-plus"),
             (self.act_open, "file-text"),
             (self.act_open_folder, "folder-open"),
@@ -549,10 +564,14 @@ class MainWindow(QMainWindow):
         self._editor_container = editor_container
 
         self._preview = MarkdownPreview(self._splitter, self._preview_base_dir())
+        self._graph = GraphView(self._splitter)
+        self._graph.hide()
         self._splitter.addWidget(editor_container)
         self._splitter.addWidget(self._preview)
+        self._splitter.addWidget(self._graph)
         self._splitter.setStretchFactor(0, 1)
         self._splitter.setStretchFactor(1, 1)
+        self._splitter.setStretchFactor(2, 1)
         layout.addWidget(self._splitter, 1)
 
         self._find_panel = FindReplacePanel(self._editor, center)
@@ -570,6 +589,7 @@ class MainWindow(QMainWindow):
         strip.add_action(self.act_view_editor, "edit")
         strip.add_action(self.act_view_split, "columns")
         strip.add_action(self.act_view_preview, "eye")
+        strip.add_action(self.act_toggle_graph, "graph")
         strip.add_separator()
         strip.add_action(self.act_find, "search")
         strip.add_action(self.act_replace, "replace")
@@ -718,7 +738,9 @@ class MainWindow(QMainWindow):
 
         self._preview.debounce.timeout.connect(self._render_preview)
         self._preview.scrolled_to_line.connect(self._on_preview_scrolled)
-        self._preview.document_link_clicked.connect(self.open_path)
+        self._preview.document_link_clicked.connect(self._open_link_target)
+        self._graph.note_activated.connect(self.open_path)
+        self._graph.missing_activated.connect(self._create_missing_note)
 
         self._file_tree.file_activated.connect(self.open_path)
         self._find_panel.closed.connect(lambda: self._editor.setFocus())
@@ -751,6 +773,7 @@ class MainWindow(QMainWindow):
         folder = self._settings.last_folder
         if folder is not None:
             self._file_tree.set_root(folder)
+            self._set_vault(folder)
             self._folder_label.setText(folder.name or str(folder))
             # Reopening with a folder but no explorer would look broken.
             self._set_file_panel_width(self._file_panel_width())
@@ -763,7 +786,13 @@ class MainWindow(QMainWindow):
         self.set_view_mode(self._settings.view_mode, persist=False)
         sizes = self._settings.split_sizes
         if len(sizes) == 2 and all(sizes):
-            self._splitter.setSizes(sizes)
+            self._splitter.setSizes([*sizes, 0])
+        else:
+            # Without saved sizes QSplitter sizes by hint, which squeezed the
+            # preview down to its minimum width; start from an even split.
+            self._splitter.setSizes([1000, 1000, 0])
+        if self._settings.graph_visible:
+            self.act_toggle_graph.setChecked(True)
 
         self._sync_preview_base_dir()
         self._preview.show_empty_state()
@@ -786,6 +815,7 @@ class MainWindow(QMainWindow):
         self._highlighter.set_palette(palette)
         self._editor.apply_palette(palette)
         self._file_tree.apply_palette(palette)
+        self._graph.apply_palette(palette)
         self._settings_panel.set_theme(key)
         self._settings_panel.refresh_swatches()
         # A theme carries a UI font size, so the drawer's measurements may have
@@ -890,6 +920,7 @@ class MainWindow(QMainWindow):
             return
         self._settings.last_folder = directory
         self._file_tree.set_root(directory)
+        self._set_vault(directory)
         self._folder_label.setText(directory.name or str(directory))
         if not self.act_toggle_files.isChecked():
             self.act_toggle_files.setChecked(True)
@@ -919,6 +950,9 @@ class MainWindow(QMainWindow):
             self._settings.last_folder = path.parent
         self._sync_preview_base_dir()
         self._file_tree.select_path(path)
+        if self._vault is None:
+            self._set_vault(self._settings.last_folder)
+        self._graph.set_current(path)
         self._render_preview()
 
         if self._document.had_decode_errors:
@@ -962,6 +996,8 @@ class MainWindow(QMainWindow):
         self._sync_preview_base_dir()
         self._file_tree.mark_dirty(path, False)
         self._file_tree.select_path(path)
+        self._graph.set_current(path)
+        self._schedule_vault_refresh(0)
         self._status(f"Saved {path}")
         return True
 
@@ -1068,6 +1104,9 @@ class MainWindow(QMainWindow):
         self._file_tree.mark_dirty(self._document.path, self._document.is_dirty)
 
     def _render_preview(self) -> None:
+        vault, path = self._vault, self._document.path
+        if vault is not None and path is not None and vault.update_text(path, self._document.text):
+            self._graph.rebuild()
         result = self._renderer.render(self._document.text)
         if result.html.strip():
             self._preview.set_body(result.html)
@@ -1187,6 +1226,122 @@ class MainWindow(QMainWindow):
         self._editor.insert_snippet(f"![{target.stem}](assets/{target.name})")
         self._status(f"Saved pasted image to {target}")
         return True
+
+    # ================================================================= vault
+    def _set_vault(self, directory: Path | None) -> None:
+        """Index ``directory`` as the folder of linked notes."""
+        if directory is None or not directory.is_dir():
+            self._vault = None
+            self._vault_timer.stop()
+        elif self._vault is None or self._vault.root != directory.resolve():
+            self._vault = Vault(directory)
+            self._vault.refresh()
+            self._schedule_vault_refresh()
+        self._graph.set_vault(self._vault)
+        self._graph.set_current(self._document.path)
+        self._editor.set_link_names(self._vault.note_names() if self._vault else [])
+
+    def _schedule_vault_refresh(self, delay: int = VAULT_REFRESH_MS) -> None:
+        if self._vault is not None:
+            self._vault_timer.start(delay)
+
+    def _refresh_vault(self) -> None:
+        """Pick up notes created, edited or deleted outside the editor."""
+        vault = self._vault
+        if vault is None:
+            return
+        started = time.monotonic()
+        changed = vault.refresh()
+        if self._document.path is not None and self._document.is_dirty:
+            # The buffer, not the file on disk, is the truth for the open note.
+            vault.update_text(self._document.path, self._document.text)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        if changed:
+            self._graph.rebuild()
+            self._editor.set_link_names(vault.note_names())
+            self._render_preview()
+        # A folder that takes long to scan is re-scanned less often.
+        self._schedule_vault_refresh(max(VAULT_REFRESH_MS, elapsed_ms * 20))
+
+    def _resolve_wikilink(self, link: Link) -> WikiTarget:
+        """Turn ``[[target]]`` into an href the preview can follow."""
+        source = self._document.path
+        vault = self._vault
+        resolved = vault.resolve(link, source) if vault is not None else None
+        exists = resolved is not None
+        if resolved is None:
+            if vault is not None:
+                resolved = vault.new_note_path(link.target, source)
+            else:
+                base = self._preview_base_dir()
+                name = link.target if Path(link.target).suffix else f"{link.target}.md"
+                resolved = base / name
+                exists = resolved.is_file()
+        fragment = f"#{slugify(link.heading)}" if link.heading else ""
+        if link.target == "" and link.heading:
+            return WikiTarget(href=fragment, exists=True)
+        try:
+            href = Path(os.path.relpath(resolved, self._preview_base_dir())).as_posix()
+        except ValueError:  # another drive on Windows
+            return WikiTarget(href=resolved.as_uri() + fragment, exists=exists)
+        title = ""
+        if vault is not None and exists and resolved in vault.notes:
+            title = vault.notes[resolved].title
+        return WikiTarget(href=quote(href) + fragment, exists=exists, title=title)
+
+    def _open_link_target(self, path: Path) -> None:
+        """A note link was clicked in the preview: open it, creating it if new."""
+        if not path.exists() and path.suffix.lower() in NOTE_SUFFIXES:
+            vault = self._vault
+            if vault is None or not path.resolve().is_relative_to(vault.root):
+                self._warn("Note not found", f"“{path.name}” does not exist.")
+                return
+            if not self._create_note_file(path):
+                return
+        self.open_path(path)
+
+    def _create_missing_note(self, name: str) -> None:
+        """A dashed node in the graph was clicked: create that note."""
+        vault = self._vault
+        if vault is None:
+            return
+        source = next(
+            (s for s, t in vault.edges() if isinstance(t, str) and t == name), None
+        )
+        path = vault.new_note_path(name, source)
+        if path.exists() or self._create_note_file(path):
+            self.open_path(path)
+
+    def _create_note_file(self, path: Path) -> bool:
+        if not self._confirm_discard():
+            return False
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            file_service.write_text_atomic(path, f"# {path.stem}\n\n")
+        except (OSError, FileError) as exc:
+            self._error("Could not create the note", str(exc))
+            return False
+        self._schedule_vault_refresh(0)
+        self._status(f"Created {path}")
+        return True
+
+    def toggle_graph(self, opening: bool) -> None:
+        """Show or hide the graph of linked notes."""
+        self._graph.setVisible(opening)
+        if opening:
+            if self._vault is None:
+                self._set_vault(self._settings.last_folder or self._document.directory)
+            editor, preview, graph = self._splitter.sizes()
+            if graph < 120:
+                # Proportions rather than pixels: at startup the splitter has
+                # not been laid out yet and its absolute sizes mean nothing.
+                # The graph takes a third; editor and preview keep their ratio.
+                pair = editor + preview
+                left = 0.5 if pair <= 0 else editor / pair
+                self._splitter.setSizes(
+                    [round(2000 * left), round(2000 * (1 - left)), 1000]
+                )
+            self._graph.rebuild()
 
     # =================================================================== view
     def set_view_mode(self, mode: ViewMode | str, *, persist: bool = True) -> None:
@@ -1582,7 +1737,8 @@ class MainWindow(QMainWindow):
             return
         self._settings.geometry = self.saveGeometry()
         if self._view_mode is ViewMode.SPLIT:
-            self._settings.split_sizes = self._splitter.sizes()
+            self._settings.split_sizes = self._splitter.sizes()[:2]
+        self._settings.graph_visible = self.act_toggle_graph.isChecked()
         self._settings.first_run_done = True
         self._settings.sync()
         event.accept()

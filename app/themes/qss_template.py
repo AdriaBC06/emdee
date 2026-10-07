@@ -313,6 +313,23 @@ QPlainTextEdit#editor {
     selection-color: {selection_fg};
 }
 
+/* ----------------------------------------------------------- graph pane */
+QListWidget#backlinks {
+    background-color: {bg_alt};
+    border: none;
+    color: {text};
+    padding: 0px 6px 6px 6px;
+}
+
+QListWidget#backlinks::item {
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+QListWidget#backlinks::item:hover {
+    background-color: {hover};
+}
+
 QWidget#lineNumberArea {
     background-color: {bg_alt};
 }

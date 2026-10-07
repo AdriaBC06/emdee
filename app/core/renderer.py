@@ -19,13 +19,15 @@ import logging
 import mimetypes
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from markdown_it import MarkdownIt
 from markdown_it.renderer import RendererHTML
+from markdown_it.rules_inline import StateInline
 from markdown_it.token import Token
 from markdown_it.utils import OptionsDict
 from mdit_py_plugins.deflist import deflist_plugin
@@ -40,10 +42,18 @@ from pygments.util import ClassNotFound
 from ..themes.palettes import DEFAULT_THEME, Palette, get_palette
 from ..themes.pygments_style import style_for
 from .sanitize import sanitize_html
+from .vault import WIKILINK_RE, Link
 
 log = logging.getLogger(__name__)
 
-__all__ = ["MarkdownRenderer", "Heading", "RenderResult", "slugify", "validate_link"]
+__all__ = [
+    "MarkdownRenderer",
+    "Heading",
+    "RenderResult",
+    "WikiTarget",
+    "slugify",
+    "validate_link",
+]
 
 #: Images larger than this are linked rather than inlined when exporting.
 MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
@@ -84,6 +94,32 @@ def slugify(text: str) -> str:
     value = _SLUG_STRIP.sub("", value)
     value = re.sub(r"[\s]+", "-", value)
     return value or "section"
+
+
+@dataclass(frozen=True)
+class WikiTarget:
+    """Where a ``[[wiki link]]`` points, as decided by the owner's vault."""
+
+    href: str
+    exists: bool = True
+    title: str = ""
+
+
+#: Maps a parsed wiki link to its destination.  Supplied by whoever knows the
+#: folder of notes; without one, ``[[Note]]`` simply points at ``Note.md``.
+WikiResolver = Callable[[Link], WikiTarget]
+
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp")
+
+
+def _default_wiki_target(link: Link) -> WikiTarget:
+    target = link.target
+    if target and not Path(target).suffix:
+        target += ".md"
+    href = quote(target)
+    if link.heading:
+        href += f"#{slugify(link.heading)}"
+    return WikiTarget(href=href, exists=True)
 
 
 @dataclass(frozen=True)
@@ -131,6 +167,7 @@ class MarkdownRenderer:
     def __init__(self, theme: str = DEFAULT_THEME) -> None:
         self._theme = theme
         self._formatter = self._make_formatter(theme)
+        self.wiki_resolver: WikiResolver = _default_wiki_target
         self._md = self._build_parser()
 
     # ------------------------------------------------------------- plumbing
@@ -174,8 +211,12 @@ class MarkdownRenderer:
         md.use(tasklists_plugin, enabled=True)
         md.use(deflist_plugin)
         md.use(front_matter_plugin)
+        # Before "link", so "[[Note]]" is not read as a reference link and
+        # "![[img.png]]" is claimed before the image rule sees the "!".
+        md.inline.ruler.before("link", "wikilink", self._parse_wikilink)
 
         rules = md.renderer.rules
+        rules["wikilink"] = self._render_wikilink
         rules["heading_open"] = self._heading_open
         rules["heading_close"] = self._heading_close
         rules["table_open"] = self._table_open
@@ -263,6 +304,58 @@ class MarkdownRenderer:
     ) -> str:
         env["front_matter"] = tokens[idx].content
         return ""
+
+    # ------------------------------------------------------------ wiki links
+    @staticmethod
+    def _parse_wikilink(state: StateInline, silent: bool) -> bool:
+        start = state.pos
+        char = state.src[start]
+        if char not in "[!" or not state.src.startswith("[[", start + (char == "!")):
+            return False
+        match = WIKILINK_RE.match(state.src, start)
+        if match is None or not (match.group("target").strip() or match.group("heading")):
+            return False
+        if not silent:
+            token = state.push("wikilink", "a", 0)
+            token.meta = {
+                "link": Link(
+                    target=match.group("target").strip(),
+                    heading=(match.group("heading") or "").strip(),
+                    alias=(match.group("alias") or "").strip(),
+                    embed=bool(match.group("embed")),
+                )
+            }
+        state.pos = match.end()
+        return True
+
+    def _render_wikilink(
+        self,
+        tokens: Sequence[Token],
+        idx: int,
+        options: OptionsDict,
+        env: dict[str, Any],
+    ) -> str:
+        link: Link = tokens[idx].meta["link"]
+        if link.embed and Path(link.target).suffix.lower() in _IMAGE_SUFFIXES:
+            src = html.escape(quote(link.target), quote=True)
+            alt = html.escape(link.alias or Path(link.target).stem, quote=True)
+            return f'<img src="{src}" alt="{alt}">'
+        try:
+            target = self.wiki_resolver(link)
+        except Exception:  # pragma: no cover - a bad resolver must not kill rendering
+            log.exception("wiki link resolution failed")
+            target = _default_wiki_target(link)
+        text = link.alias or (
+            f"{link.target} › {link.heading}" if link.target and link.heading
+            else link.target or link.heading
+        )
+        classes = "wikilink" if target.exists else "wikilink is-missing"
+        tip = target.title or ("" if target.exists else "Not created yet — click to create")
+        title = f' title="{html.escape(tip, quote=True)}"' if tip else ""
+        return (
+            f'<a class="{classes}" href="{html.escape(target.href, quote=True)}"{title}>'
+            f"{html.escape(text)}</a>"
+        )
 
     # ---------------------------------------------------------- highlighting
     def _highlight(self, code: str, lang: str, attrs: str) -> str:

@@ -60,6 +60,7 @@ DEFAULTS: dict[str, Any] = {
     "split_sizes": [],
     "file_panel_width": 258,
     "gif_pdf_notice_shown": False,
+    "graph_visible": False,
 }
 
 
@@ -219,6 +220,15 @@ class Settings:
     @file_panel_width.setter
     def file_panel_width(self, value: int) -> None:
         self._set("file_panel_width", int(value))
+
+    @property
+    def graph_visible(self) -> bool:
+        """Whether the graph pane was open when the window last closed."""
+        return _as_bool(self._get("graph_visible"), False)
+
+    @graph_visible.setter
+    def graph_visible(self, value: bool) -> None:
+        self._set("graph_visible", bool(value))
 
     @property
     def gif_pdf_notice_shown(self) -> bool:

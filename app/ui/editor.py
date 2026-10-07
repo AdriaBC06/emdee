@@ -9,10 +9,11 @@ granular) and painting the line-number gutter.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
-from PyQt6.QtCore import QRect, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QRect, QSize, QStringListModel, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -27,7 +28,7 @@ from PyQt6.QtGui import (
     QTextFormat,
     QTextOption,
 )
-from PyQt6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
+from PyQt6.QtWidgets import QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
 from ..core import textops
 from ..core.textops import EditResult
@@ -43,6 +44,9 @@ MONO_FAMILIES = (
     "DejaVu Sans Mono",
     "Liberation Mono",
 )
+
+#: An unclosed ``[[`` right before the cursor, capturing what has been typed.
+_OPEN_WIKILINK = re.compile(r"!?\[\[([^\[\]|#\n]*)$")
 
 
 def _mono_font(point_size: int) -> QFont:
@@ -107,6 +111,16 @@ class MarkdownEditor(QPlainTextEdit):
 
         #: Injected by the main window so pasting an image can write a file.
         self.mime_handler: Callable[[Any], bool] | None = None
+
+        # Typing "[[" offers the names of the notes in the open folder.
+        self._link_model = QStringListModel(self)
+        self._completer = QCompleter(self._link_model, self)
+        self._completer.setWidget(self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._completer.setMaxVisibleItems(10)
+        self._completer.activated.connect(self._insert_link_completion)
 
         self.blockCountChanged.connect(self._update_gutter_width)
         self.updateRequest.connect(self._update_gutter)
@@ -174,7 +188,19 @@ class MarkdownEditor(QPlainTextEdit):
         return 18 + self.fontMetrics().horizontalAdvance("9") * digits
 
     def _update_gutter_width(self) -> None:
-        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+        """Keep the text margin and the gutter exactly the same width.
+
+        Both derive from the font metrics, so they must always be updated
+        together: sizing the gutter on resize but the margin only when the
+        block count changed let a later font change (the stylesheet polishing
+        the widget, a theme switch) leave the gutter wider than the margin —
+        and painted on top of the first characters of every line.
+        """
+        width = self.line_number_area_width()
+        if self.viewportMargins().left() != width:
+            self.setViewportMargins(width, 0, 0, 0)
+        rect = self.contentsRect()
+        self._gutter.setGeometry(QRect(rect.left(), rect.top(), width, rect.height()))
 
     def _update_gutter(self, rect: QRect, dy: int) -> None:
         if dy:
@@ -186,10 +212,15 @@ class MarkdownEditor(QPlainTextEdit):
 
     def resizeEvent(self, event: QResizeEvent | None) -> None:  # noqa: N802 - Qt API
         super().resizeEvent(event)
-        rect = self.contentsRect()
-        self._gutter.setGeometry(
-            QRect(rect.left(), rect.top(), self.line_number_area_width(), rect.height())
-        )
+        self._update_gutter_width()
+
+    def changeEvent(self, event: QEvent | None) -> None:  # noqa: N802 - Qt API
+        super().changeEvent(event)
+        if event is not None and event.type() in (
+            QEvent.Type.FontChange,
+            QEvent.Type.StyleChange,
+        ):
+            self._update_gutter_width()
 
     def paint_line_numbers(self, event: QPaintEvent) -> None:
         """Paint the gutter; called back from :class:`LineNumberArea`."""
@@ -375,6 +406,53 @@ class MarkdownEditor(QPlainTextEdit):
             cursor.setPosition(position + cursor_offset)
             self.setTextCursor(cursor)
 
+    # ------------------------------------------------------- [[ completion
+    def set_link_names(self, names: list[str]) -> None:
+        """Note names offered after typing ``[[``."""
+        self._link_model.setStringList(names)
+
+    def _open_link_prefix(self) -> str | None:
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            return None
+        before = cursor.block().text()[: cursor.positionInBlock()]
+        match = _OPEN_WIKILINK.search(before)
+        return match.group(1) if match else None
+
+    def _update_link_completion(self) -> None:
+        prefix = self._open_link_prefix()
+        popup = self._completer.popup()
+        if prefix is None or not self._link_model.rowCount():
+            popup.hide()
+            return
+        self._completer.setCompletionPrefix(prefix)
+        if self._completer.completionCount() == 0:
+            popup.hide()
+            return
+        rect = self.cursorRect()
+        rect.setWidth(
+            max(220, popup.sizeHintForColumn(0) + popup.verticalScrollBar().sizeHint().width() + 16)
+        )
+        self._completer.complete(rect)
+        if not popup.currentIndex().isValid():
+            popup.setCurrentIndex(self._completer.completionModel().index(0, 0))
+
+    def _insert_link_completion(self, name: str) -> None:
+        prefix = self._open_link_prefix()
+        if prefix is None:
+            return
+        cursor = self.textCursor()
+        cursor.movePosition(
+            QTextCursor.MoveOperation.Left, QTextCursor.MoveMode.KeepAnchor, len(prefix)
+        )
+        after = cursor.block().text()[cursor.positionInBlock() + len(prefix):]
+        closing = "" if after.startswith("]]") else "]]"
+        cursor.insertText(name + closing)
+        if not closing:
+            cursor.movePosition(QTextCursor.MoveOperation.Right, n=2)
+        self.setTextCursor(cursor)
+        self._completer.popup().hide()
+
     # ------------------------------------------------------------- keyboard
     def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802 - Qt API
         if event is None:
@@ -382,6 +460,16 @@ class MarkdownEditor(QPlainTextEdit):
         key = event.key()
         modifiers = event.modifiers()
         plain = modifiers == Qt.KeyboardModifier.NoModifier
+
+        if self._completer.popup().isVisible():
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab):
+                index = self._completer.popup().currentIndex()
+                if index.isValid():
+                    self._insert_link_completion(str(index.data()))
+                    return
+            if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backtab):
+                self._completer.popup().hide()
+                return
 
         if key == Qt.Key.Key_Tab and modifiers == Qt.KeyboardModifier.NoModifier:
             if self.textCursor().hasSelection():
@@ -400,6 +488,8 @@ class MarkdownEditor(QPlainTextEdit):
             return
 
         super().keyPressEvent(event)
+        if event.text() or key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+            self._update_link_completion()
 
     def _indent_selection(self, direction: int) -> None:
         cursor = self.textCursor()

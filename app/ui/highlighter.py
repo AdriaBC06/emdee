@@ -69,6 +69,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             _Rule(re.compile(r"(\[[^\]^]*\])(\([^)]*\)|\[[^\]]*\])"), "link_text", group=1,
                   extra_group=2, extra_key="link_url"),
             _Rule(re.compile(r"<(?:https?|mailto):[^>\s]+>"), "link_url"),
+            # [[Wiki links]] between notes, embeds included.
+            _Rule(re.compile(r"!?\[\[[^\[\]\n]+\]\]"), "wikilink"),
             _Rule(re.compile(r"^\s*\[\^[^\]]+\]:"), "footnote"),
             _Rule(re.compile(r"\[\^[^\]]+\]"), "footnote"),
             # Emphasis.
@@ -126,6 +128,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             "fence": self._make(muted, mono=True, background=code_bg),
             "link_text": self._make(t["cyan_on_bg"]),
             "link_url": self._make(muted),
+            "wikilink": self._make(accent2, bold=True),
             "image": self._make(t["yellow_on_bg"]),
             "footnote": self._make(t["cyan_on_bg"]),
             "list_marker": self._make(accent2, bold=True),

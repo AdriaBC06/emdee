@@ -124,6 +124,18 @@ a:hover {
     border-bottom-color: {accent2_on_bg};
 }
 
+/* [[wiki links]] between notes: a dotted underline tells them apart from web
+   links, and a note that does not exist yet is shown muted and dashed. */
+a.wikilink {
+    border-bottom-style: dotted;
+    border-bottom-width: 2px;
+}
+
+a.wikilink.is-missing {
+    color: {muted_on_bg};
+    border-bottom: 1px dashed {muted_on_bg};
+}
+
 strong {
     color: {text};
     font-weight: 700;

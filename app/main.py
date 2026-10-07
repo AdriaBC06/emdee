@@ -114,7 +114,13 @@ def _welcome_document() -> Path | None:
 
 def main(argv: list[str] | None = None) -> int:
     """Create the application, restore the session and run the event loop."""
-    args = _parse_args(list(argv if argv is not None else sys.argv[1:]))
+    raw = list(argv if argv is not None else sys.argv[1:])
+    if raw[:1] == ["vault"]:
+        # Command-line tools for a folder of linked notes; no window at all.
+        from .cli import main as vault_main
+
+        return vault_main(raw[1:])
+    args = _parse_args(raw)
     _configure_logging(args.verbose)
     _configure_chromium(args.verbose)
 
