@@ -5,8 +5,8 @@
 # accurate rather than leaving PyInstaller's placeholder text in place.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 2, 0),
-    prodvers=(1, 0, 2, 0),
+    filevers=(1, 0, 3, 0),
+    prodvers=(1, 0, 3, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -21,14 +21,14 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'Adrià Bonnin Catalán'),
           StringStruct('FileDescription', 'Emdee — a themeable Markdown editor'),
-          StringStruct('FileVersion', '1.0.2.0'),
+          StringStruct('FileVersion', '1.0.3.0'),
           StringStruct('InternalName', 'emdee'),
           StringStruct('LegalCopyright',
                        'Copyright (C) 2026 Adrià Bonnin Catalán. '
                        'GNU General Public License v3 or later.'),
           StringStruct('OriginalFilename', 'Emdee.exe'),
           StringStruct('ProductName', 'Emdee'),
-          StringStruct('ProductVersion', '1.0.2'),
+          StringStruct('ProductVersion', '1.0.3'),
         ])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
