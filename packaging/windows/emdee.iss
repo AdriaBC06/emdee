@@ -12,7 +12,7 @@
 ; for is a worse experience than no elevation at all.
 
 #define AppName "Emdee"
-#define AppVersion "1.0.3"
+#define AppVersion "1.1.0"
 #define AppPublisher "Adrià Bonnin Catalán"
 #define AppURL "https://github.com/AdriaBC06/emdee"
 #define AppExe "Emdee.exe"

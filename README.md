@@ -12,7 +12,7 @@
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-bd93f9?style=flat-square)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-supported-ff79c6?style=flat-square&logo=linux&logoColor=white)](#linux)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-8be9fd?style=flat-square&logo=windows&logoColor=white)](#windows)
-[![Tests](https://img.shields.io/badge/tests-232%20passing-50fa7b?style=flat-square)](tests)
+[![Tests](https://img.shields.io/badge/tests-330%20passing-50fa7b?style=flat-square)](tests)
 [![Download](https://img.shields.io/github/v/release/AdriaBC06/emdee?style=flat-square&label=download&color=bd93f9)](../../releases/latest)
 
 </div>

@@ -3,7 +3,7 @@
 #
 # Build from this directory:  makepkg -si
 pkgname=emdee
-pkgver=1.0.3
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="A fast, themeable Markdown editor with a live preview"
 arch=('any')
