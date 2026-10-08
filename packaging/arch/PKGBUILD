@@ -21,6 +21,8 @@ depends=(
     'python-linkify-it-py'
     'python-pygments'
     'python-nh3'
+    'python-cryptography'
+    'python-spake2'
 )
 checkdepends=('python-pytest')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")

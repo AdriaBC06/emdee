@@ -120,6 +120,11 @@ def main(argv: list[str] | None = None) -> int:
         from .cli import main as vault_main
 
         return vault_main(raw[1:])
+    if raw[:1] == ["sync"]:
+        # Sharing vaults with paired devices on the LAN; no window either.
+        from .sync_cli import main as sync_main
+
+        return sync_main(raw[1:])
     args = _parse_args(raw)
     _configure_logging(args.verbose)
     _configure_chromium(args.verbose)

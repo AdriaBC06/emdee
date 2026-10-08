@@ -122,6 +122,11 @@ Export what you see to a self-contained HTML file or a PDF.
   not exist yet are dashed nodes
 - ↩️ **Backlinks** under the graph: every note that points at the one you are
   reading
+- 🔁 **Share vaults between your devices** (`Ctrl+Shift+Y`) over the local
+  network: pair once, then receive, send or two-way sync a folder. End-to-end
+  encrypted, every operation needs a fresh one-time code *and* the other
+  side's approval, nothing is ever deleted outright — see
+  [Sharing vaults on your network](#sharing-vaults-on-your-network)
 - 🔄 The folder is re-indexed in the background, so notes written by another
   program — a sync client, or an AI agent — appear in the graph within seconds
 
@@ -295,6 +300,8 @@ below install all of them; the virtualenv route gets them from PyPI instead.
 | **linkify-it-py** | turning bare URLs into links |
 | Pygments | syntax highlighting in code blocks |
 | **nh3** | HTML sanitising |
+| cryptography | encryption and signatures for vault sharing |
+| spake2 | the code-authenticated key exchange for vault sharing |
 
 The four in bold are the ones most commonly missed, because several
 distributions ship them separately from the main PyQt6 or Markdown packages.
@@ -315,7 +322,8 @@ Or run it straight from the clone:
 ```bash
 sudo pacman -S python-pyqt6 python-pyqt6-webengine qt6-svg \
                python-markdown-it-py python-mdit_py_plugins \
-               python-linkify-it-py python-pygments python-nh3
+               python-linkify-it-py python-pygments python-nh3 \
+               python-cryptography python-spake2
 git clone https://github.com/AdriaBC06/emdee.git
 cd emdee
 python -m app.main
@@ -330,7 +338,8 @@ fails at startup with `ImportError: libQt6Svg.so.6` without it.
 ```bash
 sudo apt install python3-pyqt6 python3-pyqt6.qtsvg python3-pyqt6.qtwebengine \
                  python3-markdown-it python3-mdit-py-plugins \
-                 python3-linkify-it python3-pygments python3-nh3
+                 python3-linkify-it python3-pygments python3-nh3 \
+                 python3-cryptography python3-spake2
 git clone https://github.com/AdriaBC06/emdee.git
 cd emdee
 python3 -m app.main
@@ -344,7 +353,8 @@ has to be named explicitly alongside `python3-pyqt6`.
 ```bash
 sudo dnf install python3-pyqt6 python3-pyqt6-webengine \
                  python3-markdown-it-py python3-mdit-py-plugins \
-                 python3-linkify-it-py python3-pygments python3-nh3
+                 python3-linkify-it-py python3-pygments python3-nh3 \
+                 python3-cryptography python3-spake2
 git clone https://github.com/AdriaBC06/emdee.git
 cd emdee
 python3 -m app.main
@@ -468,6 +478,61 @@ the agent to run `emdee vault check` when it is done. Start an agent in that
 folder, keep Emdee open on it with the graph showing, and watch the concept
 map grow as it writes. From a source checkout, use `python -m app.cli vault …`.
 
+### Sharing vaults on your network
+
+Open **Share vaults** in the sidebar (`Ctrl+Shift+Y`). Devices are *contacts*;
+either one can ask for the other's vault or send its own.
+
+1. **Pair once.** On device B click *Accept connections*: it shows an 8-digit
+   code and its address. On device A click *Add contact…*, enter that address
+   and the code, and accept the request on B. Both now trust each other.
+2. **Every operation after that** works the same way: B clicks *Accept
+   connections* (a new code each time), A selects B and chooses *Receive*
+   (B's vault into A's folder), *Send* (A's folder into B's vault) or *Sync
+   both ways*, types the code, and B approves the request — B sees who is
+   asking and for what.
+
+The same from a terminal, for headless machines:
+
+```bash
+emdee sync listen ~/notes            # B: shows the code, asks before allowing anything
+emdee sync pair 192.168.1.20         # A: add B as a contact (prompts for the code)
+emdee sync pull <contact> ~/notes    # A: or push / sync
+emdee sync contacts                  # paired devices and their fingerprints
+emdee sync id                        # this device's name, port and fingerprint
+```
+
+What it guarantees:
+
+- **Local network only.** The listener drops any connection that is not from a
+  private, link-local or loopback address before reading a byte, and the
+  client refuses to dial anything else. Nothing is announced on the network.
+- **No open port by default.** The port (47231, configurable) is open only
+  while *Accept connections* is on, for one authenticated connection, five
+  minutes at most; three wrong codes close it too.
+- **The code cannot be guessed offline.** It feeds SPAKE2, a
+  password-authenticated key exchange: an eavesdropper learns nothing, and an
+  attacker in the middle gets one guess per connection — three in total.
+- **End-to-end encryption with forward secrecy.** Fresh ephemeral keys per
+  connection; every frame is ChaCha20-Poly1305 with a counter nonce, so
+  tampered, replayed, reordered or dropped frames end the connection.
+- **Devices are keys, not IPs.** Each device has an Ed25519 key pair (in a
+  `0700` folder under your config directory). Every connection proves it, and
+  a code alone is not enough: the other device must also be a paired
+  contact. A different device answering at a contact's address is reported
+  as a possible impersonation and nothing is sent.
+- **The receiving side trusts nothing.** Every path is checked (no `..`, no
+  absolute paths, no hidden folders, no links, no names Windows would
+  reinterpret), only notes and attachments travel (`.md`, images, PDF, audio,
+  video, CSV — never scripts or executables), sizes are capped, every file is
+  verified against its SHA-256 before it replaces anything, and an overwrite
+  or deletion is refused if the file changed meanwhile.
+- **Nothing is lost.** Replaced and deleted files go to the vault's `.trash/`;
+  when both sides edited the same note, both versions are kept.
+
+On Windows, the firewall asks the first time Emdee accepts connections; allow
+it for *private* networks only.
+
 On first launch Emdee opens `WELCOME.md`, a document that exercises every
 supported Markdown feature.
 
@@ -499,6 +564,7 @@ supported Markdown feature.
 | `Ctrl+Shift+3` | Preview only |
 | `F9` | Toggle explorer |
 | `Ctrl+G` | Toggle graph view |
+| `Ctrl+Shift+Y` | Share vaults |
 | `F10` | Toggle preferences |
 | `Ctrl+=` / `Ctrl+-` | Editor font size |
 | `F1` | About |
@@ -645,6 +711,7 @@ emdee/
 ├── app/
 │   ├── main.py                  # entry point, GPL header, CLI
 │   ├── cli.py                   # `emdee vault …` — graph tools for scripts and agents
+│   ├── sync_cli.py              # `emdee sync …` — pair, listen, pull/push/sync
 │   ├── paths.py                 # resource_path() — PyInstaller-aware, no .qrc
 │   ├── core/                    # ── zero PyQt6.QtWidgets imports ──
 │   │   ├── document.py          #    text buffer + dirty-state tracking
@@ -654,6 +721,11 @@ emdee/
 │   │   ├── page.py              #    self-contained HTML document assembly
 │   │   ├── sanitize.py          #    nh3/ammonia policy for untrusted HTML
 │   │   ├── vault.py             #    [[wiki links]], backlinks, note graph (pure Python)
+│   │   ├── sync/                #    vault sharing on the LAN (no Qt)
+│   │   │   ├── store.py         #       device key pair + trusted contacts
+│   │   │   ├── channel.py       #       SPAKE2 + Ed25519 handshake, encrypted frames
+│   │   │   ├── files.py         #       path checks, manifests, 3-way plan, .trash
+│   │   │   └── session.py       #       one-shot listener, pair / pull / push / sync
 │   │   └── settings.py          #    typed QSettings wrapper (QtCore only)
 │   ├── themes/
 │   │   ├── palettes.py          #    the eight palettes — the only place colours live
@@ -670,6 +742,7 @@ emdee/
 │   │   ├── preview.py           #    QWebEngineView + QWebChannel scroll sync
 │   │   ├── file_tree.py         #    Markdown-filtered explorer
 │   │   ├── graph_view.py        #    force-directed note graph + backlinks
+│   │   ├── sync_dialog.py       #    "Share vaults": contacts, code, approvals
 │   │   ├── find_replace.py      #    inline find/replace with regex
 │   │   ├── settings_panel.py    #    sliding preferences drawer
 │   │   ├── toolbar.py           #    reusable icon strips
@@ -677,7 +750,7 @@ emdee/
 │   │   └── about.py             #    version, licence, credits
 │   └── resources/icons/
 │       ├── app/                 #    logo.svg, logo-small.svg, logo-mono.svg
-│       └── ui/                  #    40 hand-written interface icons
+│       └── ui/                  #    41 hand-written interface icons
 ├── packaging/
 │   ├── emdee.desktop            # freedesktop Desktop Entry
 │   ├── icons/hicolor/           # generated PNG + SVG icon theme
@@ -695,7 +768,7 @@ emdee/
 │   └── release.yml              # tagged builds published to a Release
 ├── tools/build_icons.py         # SVG → every size and the .ico, in one command
 ├── pyproject.toml               # pytest + ruff configuration
-├── tests/                       # 232 tests, no QApplication required
+├── tests/                       # 330 tests, no QApplication required
 ├── screenshots/                 # images used by this README
 ├── WELCOME.md                   # feature-complete demo document
 ├── requirements.txt

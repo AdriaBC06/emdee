@@ -16,3 +16,10 @@ Pygments==2.19.2
 # ammonia (Rust/html5ever). Parsing is delegated to it on purpose — a
 # hand-rolled sanitiser is a bypass waiting to happen.
 nh3==0.3.6
+
+# Vault sharing on the local network (Share vaults / `emdee sync`): audited
+# primitives only. cryptography (PyCA) supplies Ed25519, HKDF-SHA256 and
+# ChaCha20-Poly1305; spake2 is the password-authenticated key exchange used
+# by Magic Wormhole, so a short one-time code cannot be brute-forced offline.
+cryptography==50.0.2
+spake2==0.9

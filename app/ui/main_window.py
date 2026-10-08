@@ -47,6 +47,7 @@ from PyQt6.QtGui import (
     QResizeEvent,
 )
 from PyQt6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -221,6 +222,7 @@ class MainWindow(QMainWindow):
         self._reload_pending = False
         self._view_mode = settings.view_mode
         self._vault: Vault | None = None
+        self._sync_dialog: QDialog | None = None
         self._renderer.wiki_resolver = self._resolve_wikilink
         self._vault_timer = QTimer(self)
         self._vault_timer.setSingleShot(True)
@@ -370,6 +372,10 @@ class MainWindow(QMainWindow):
             "Preferences", self.toggle_settings_panel, "F10"
         )
         self.act_toggle_graph = self._toggle_action("Graph", self.toggle_graph, "Ctrl+G")
+        self.act_share = self._action(
+            "Share vaults", self.show_sync, "Ctrl+Shift+Y",
+            tip="Share or sync this folder with your devices on the local network",
+        )
         self.act_about = self._action("About", self.show_about, "F1")
         self.act_zoom_in = self._action("Increase font size", lambda: self._nudge_font(1), "Ctrl+=")
         self.act_zoom_out = self._action("Decrease font size", lambda: self._nudge_font(-1), "Ctrl+-")
@@ -462,6 +468,7 @@ class MainWindow(QMainWindow):
         for action, icon in (
             (self.act_toggle_files, "folder"),
             (self.act_toggle_graph, "graph"),
+            (self.act_share, "sync"),
             (self.act_new, "file-plus"),
             (self.act_open, "file-text"),
             (self.act_open_folder, "folder-open"),
@@ -1646,6 +1653,34 @@ class MainWindow(QMainWindow):
 
     def show_about(self) -> None:
         AboutDialog(self._settings.filename, self).exec()
+
+    def show_sync(self) -> None:
+        """Open the "Share vaults" window (contacts, sync, accept connections)."""
+        if self._sync_dialog is None:
+            try:
+                from .sync_dialog import SyncDialog
+            except ImportError as exc:  # cryptography / spake2 not installed
+                self._warn(
+                    "Vault sharing is unavailable",
+                    f"A required library is missing: {exc.name or exc}. "
+                    "Install the packages listed in requirements.txt.",
+                )
+                return
+            self._sync_dialog = SyncDialog(self._sync_folder, self)
+            self._sync_dialog.vault_changed.connect(self._on_vault_synced)
+        self._sync_dialog.show()
+        self._sync_dialog.raise_()
+        self._sync_dialog.activateWindow()
+
+    def _sync_folder(self) -> Path | None:
+        if self._vault is not None:
+            return self._vault.root
+        folder = self._settings.last_folder
+        return Path(folder) if folder and Path(folder).is_dir() else None
+
+    def _on_vault_synced(self, folder: Path) -> None:
+        self._status(f"Synced {folder}")
+        self._schedule_vault_refresh(0)
 
     def _show_recent_menu(self) -> None:
         """Drop the recent-files menu just under the rail button."""
