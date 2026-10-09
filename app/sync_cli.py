@@ -117,6 +117,7 @@ def _cmd_listen(args: argparse.Namespace) -> int:
     listener = Listener(
         identity, ContactBook(), vault=vault, approve=_approve, on_event=_say,
         port=args.port, seconds=args.minutes * 60, allow_pairing=not args.no_pair,
+        open_firewall=True,
     )
     port = listener.open()
     print(f"{APP_NAME} is accepting ONE connection on port {port} for {args.minutes} min.")

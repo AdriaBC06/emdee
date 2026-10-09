@@ -23,6 +23,7 @@ deleted outright — replaced and deleted files go to ``.trash/``.
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import ipaddress
 import logging
@@ -35,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from ...platform_support import IS_WINDOWS
-from . import files
+from . import files, firewall
 from .channel import (
     MODE_PAIR,
     MODE_SESSION,
@@ -157,6 +158,12 @@ def _connect(host: str, port: int) -> socket.socket:
         except OSError as exc:
             sock.close()
             last = exc
+    if isinstance(last, OSError) and last.errno == errno.EHOSTUNREACH:
+        raise SyncError(
+            f"Could not connect to {host}:{port} ({last}). Either the device is not on this "
+            f"network, or a firewall on it is blocking port {port}: Emdee opens it when "
+            f"accepting connections if it can, otherwise allow that port there by hand."
+        )
     raise SyncError(
         f"Could not connect to {host}:{port} — is the other device accepting connections? ({last})"
     )
@@ -373,8 +380,10 @@ class Listener:
         seconds: float = DEFAULT_LISTEN_SECONDS,
         max_attempts: int = MAX_ATTEMPTS,
         allow_pairing: bool = True,
+        open_firewall: bool = False,
     ) -> None:
         self.identity = identity
+        self.open_firewall = open_firewall
         self.contacts = contacts
         self.vault = vault.resolve() if vault is not None else None
         self.approve = approve
@@ -412,6 +421,15 @@ class Listener:
 
     def serve(self) -> ListenerOutcome:
         """Block until one operation has run, or the listener gives up."""
+        if self.vault is None:
+            self.on_event(
+                "No folder chosen: other devices can only add you as a contact. "
+                "To share files, choose a folder and accept connections again."
+            )
+        if self.open_firewall:
+            message = firewall.ensure_port_open(self.port)
+            if message is not None:
+                self.on_event(message)
         server = self._server or _bind(self.port)
         self._server = server
         server.settimeout(0.25)

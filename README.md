@@ -530,8 +530,15 @@ What it guarantees:
 - **Nothing is lost.** Replaced and deleted files go to the vault's `.trash/`;
   when both sides edited the same note, both versions are kept.
 
+Without a folder chosen, *Accept connections* only lets other devices add you
+as a contact, so Emdee asks for one first; if you skip it, both sides are told
+why files can't be shared.
+
 On Windows, the firewall asks the first time Emdee accepts connections; allow
-it for *private* networks only.
+it for *private* networks only. On Linux, if firewalld or ufw is blocking the
+port (the other device sees *No route to host*), Emdee asks for your password
+through `pkexec` and allows it — for firewalld only until the next reboot. If
+that is not possible, the log shows the command to run by hand.
 
 On first launch Emdee opens `WELCOME.md`, a document that exercises every
 supported Markdown feature.

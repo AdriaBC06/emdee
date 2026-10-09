@@ -670,6 +670,47 @@ def test_listener_refuses_pairing_mode_when_disabled(alice: Device, bob: Device)
     listener.cancel()
 
 
+def test_listener_without_folder_says_why_files_cannot_be_shared(paired: tuple[Device, Device]) -> None:
+    alice, bob = paired
+    events: list[str] = []
+    listener = bob.listener(vault=None, on_event=events.append)
+    contact = alice.contacts.update(
+        alice.contacts.by_key(bob.identity.public_bytes), host=LOOPBACK, port=listener.port  # type: ignore[arg-type]
+    )
+    with Serving(listener), pytest.raises(RemoteError, match="no folder chosen"):
+        transfer(alice.identity, contact, alice.vault, "push", listener.code)
+    listener.cancel()
+    assert any("No folder chosen" in e for e in events)
+    assert any("no folder is chosen here" in e for e in events)
+
+
+def test_firewalld_port_is_opened_only_when_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.sync import firewall
+
+    calls: list[tuple[str, ...]] = []
+    allowed = {"value": False}
+
+    def fake_run(*args: str, timeout: float = 0):  # noqa: ANN202 - test double
+        calls.append(args)
+        if args[:2] == ("firewall-cmd", "--state"):
+            code = 0
+        elif args[0] == "firewall-cmd":
+            code = 0 if allowed["value"] else 1
+        else:  # pkexec firewall-cmd --add-port=...
+            allowed["value"] = True
+            code = 0
+        return type("Done", (), {"returncode": code})()
+
+    monkeypatch.setattr(firewall, "IS_LINUX", True)
+    monkeypatch.setattr(firewall.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(firewall, "_run", fake_run)
+    assert "Opened port 47231" in (firewall.ensure_port_open(47231) or "")
+    assert ("pkexec", "firewall-cmd", "--add-port=47231/tcp") in calls
+    calls.clear()
+    assert firewall.ensure_port_open(47231) is None
+    assert not any(c[0] == "pkexec" for c in calls)
+
+
 def test_pairing_with_self_is_refused(alice: Device) -> None:
     listener = alice.listener()
     with Serving(listener), pytest.raises(SecurityError):

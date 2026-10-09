@@ -292,7 +292,8 @@ class SyncDialog(QDialog):
         listening = self._listener is not None
         idle = not self._busy and not listening
         for op, button in self._op_buttons.items():
-            button.setEnabled(idle and contact is not None and self._folder is not None)
+            # Without a folder the button still works: it asks for one first.
+            button.setEnabled(idle and contact is not None)
             if contact is not None:
                 button.setToolTip(_OP_LABELS[op][1].format(name=contact.name))
         self._add_button.setEnabled(idle)
@@ -329,13 +330,15 @@ class SyncDialog(QDialog):
         save_device_settings(self._identity)
         self._refresh_identity()
 
-    def _choose_folder(self) -> None:
+    def _choose_folder(self) -> bool:
+        """Ask for the folder to share; returns whether one was chosen."""
         start = str(self._folder or Path.home())
         chosen = QFileDialog.getExistingDirectory(self, "Folder to share", start)
         if chosen:
             self._folder = Path(chosen)
             self._refresh_identity()
             self._update_buttons()
+        return bool(chosen)
 
     def _add_contact(self) -> None:
         dialog = _AddressDialog("Add contact", self, ask_code=True)
@@ -391,9 +394,14 @@ class SyncDialog(QDialog):
             self._update_buttons()
 
     def _start_operation(self, op: str) -> None:
-        contact, folder = self._selected(), self._folder
-        if contact is None or folder is None:
+        contact = self._selected()
+        if contact is None:
             return
+        if self._folder is None and not self._choose_folder():
+            self._log("No folder chosen: files can only be shared to or from a folder.")
+            return
+        folder = self._folder
+        assert folder is not None
         label, tip = _OP_LABELS[op]
         text, ok = QInputDialog.getText(
             self, label,
@@ -430,11 +438,16 @@ class SyncDialog(QDialog):
             return
         if self._listener is not None or self._busy:
             return
+        if self._folder is None:
+            # Without a folder only pairing works: offer to pick one first.
+            # Cancelling still listens, and the log says why files can't move.
+            self._choose_folder()
         self._contacts.reload()
         try:
             listener = Listener(
                 self._identity, self._contacts, vault=self._folder,
                 approve=self._approve_from_thread, on_event=self._bridge.event.emit,
+                open_firewall=True,
             )
             port = listener.open()
         except SyncError as exc:

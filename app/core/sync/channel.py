@@ -85,6 +85,10 @@ _MODES = (MODE_PAIR, MODE_SESSION)
 
 _STATUS_OK = 0
 _STATUS_REFUSED = 1
+#: Why a listener refused a mode, so the other side can say so.  Older
+#: versions only know OK/REFUSED and show the generic message for these.
+_STATUS_NO_VAULT = 2
+_STATUS_NO_PAIRING = 3
 
 CODE_DIGITS = 8
 
@@ -419,6 +423,13 @@ def client_handshake(sock: socket.socket, *, code: str, mode: int, identity: Ide
     server = _parse_hello(server_raw)
     if server.version != VERSION:
         raise ProtocolError("The other device runs an incompatible version of Emdee.")
+    if server.flag == _STATUS_NO_VAULT:
+        raise RemoteError(
+            "The other device has no folder chosen, so files cannot be shared with it. "
+            "Ask them to choose a folder in “Share vaults” and accept connections again."
+        )
+    if server.flag == _STATUS_NO_PAIRING:
+        raise RemoteError("The other device is not accepting new contacts right now.")
     if server.flag != _STATUS_OK:
         raise RemoteError(
             "The other device is not accepting this kind of connection "
@@ -469,11 +480,23 @@ def server_handshake(
     sock.settimeout(IO_TIMEOUT)
     client_raw = _read_frame(sock, _HELLO_LEN)
     client = _parse_hello(client_raw)
-    accepted = client.version == VERSION and client.flag in modes
-    reply = MAGIC + bytes([VERSION, _STATUS_OK if accepted else _STATUS_REFUSED])
+    if client.version != VERSION or client.flag not in _MODES:
+        status = _STATUS_REFUSED
+    elif client.flag not in modes:
+        status = _STATUS_NO_VAULT if client.flag == MODE_SESSION else _STATUS_NO_PAIRING
+    else:
+        status = _STATUS_OK
+    reply = MAGIC + bytes([VERSION, status])
     reply += secrets.token_bytes(32) + exchange.outbound
     _write_frame(sock, reply)
-    if not accepted:
+    if status == _STATUS_NO_VAULT:
+        raise ProtocolError(
+            "it wants to share files, but no folder is chosen here. "
+            "Choose a folder and accept connections again."
+        )
+    if status == _STATUS_NO_PAIRING:
+        raise ProtocolError("it wants to become a contact, but pairing is turned off.")
+    if status != _STATUS_OK:
         raise ProtocolError("A device asked for a connection this listener does not offer.")
 
     send_key, recv_key, transcript = _keys(exchange.finish(client.spake), client_raw, reply)
