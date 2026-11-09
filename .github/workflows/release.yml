@@ -40,7 +40,7 @@ jobs:
           pip install pyinstaller==6.11.1
 
       - name: Check the tag matches the application version
-        # Cheap now, and it prevents publishing a v1.1.0 release whose About
+        # Cheap now, and it prevents publishing a v1.2.0 release whose About
         # dialog, executable metadata and installer all say 1.0.0 — a mismatch
         # that is invisible until someone reports a bug against the wrong
         # version.

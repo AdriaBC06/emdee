@@ -12,7 +12,7 @@
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-bd93f9?style=flat-square)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-supported-ff79c6?style=flat-square&logo=linux&logoColor=white)](#linux)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-8be9fd?style=flat-square&logo=windows&logoColor=white)](#windows)
-[![Tests](https://img.shields.io/badge/tests-330%20passing-50fa7b?style=flat-square)](tests)
+[![Tests](https://img.shields.io/badge/tests-430%20passing-50fa7b?style=flat-square)](tests)
 [![Download](https://img.shields.io/github/v/release/AdriaBC06/emdee?style=flat-square&label=download&color=bd93f9)](../../releases/latest)
 
 </div>
@@ -164,7 +164,7 @@ Export what you see to a self-contained HTML file or a PDF.
 
 **Themes**
 
-- 🎛 Eight palettes, hot-swappable, all generated from **one** set of colour tokens
+- 🎛 Nine palettes, hot-swappable, all generated from **one** set of colour tokens
 - ♿ Every text colour is contrast-corrected to WCAG AA (≥ 4.5:1) — and there is
   [a test](tests/test_contrast.py) that fails if a palette ever regresses
 
@@ -172,10 +172,11 @@ Export what you see to a self-contained HTML file or a PDF.
 
 ## 🎨 Theme gallery
 
-Eight palettes, switched from the preferences drawer with no restart. Every shot
+Nine palettes, switched from the preferences drawer with no restart. Every shot
 below is the same document at the same scroll position, so only the colour
-changes. The newest pair, **Teal Diva Night** and **Teal Diva Day**, is listed
-in the palette table below.
+changes. The newest three — **Teal Diva Night**, **Teal Diva Day** and
+**Capricorn**, a black, acid-green and crimson dark theme — are listed in the
+palette table below.
 
 <table>
 <tr>
@@ -310,6 +311,22 @@ installing and uninstalling without residue.
 ### Linux
 
 Requires **Python 3.11+**.
+
+#### AppImage (no installation)
+
+Each [release](../../releases/latest) includes `Emdee-<version>-x86_64.AppImage`,
+a self-contained build with Python, Qt and Chromium inside. It runs on any
+x86_64 distribution with glibc 2.28 or newer:
+
+```bash
+chmod +x Emdee-*-x86_64.AppImage
+./Emdee-*-x86_64.AppImage
+```
+
+`SHA256SUMS-linux.txt` is published next to it. To build it yourself, run
+`packaging/linux/build-appimage.sh`; the result lands in `dist/`.
+
+The routes below run Emdee from source instead.
 
 #### What Emdee needs
 
@@ -740,7 +757,7 @@ been quietly base64-embedded into a file you then shared. Image inlining is now
 contained to the document's own folder, symlinks resolved first.
 
 The security tests live in
-[`tests/test_sanitize.py`](tests/test_sanitize.py) — 34 of the 179.
+[`tests/test_sanitize.py`](tests/test_sanitize.py) — 34 of the 430.
 
 ---
 
@@ -761,6 +778,11 @@ emdee/
 │   │   ├── page.py              #    self-contained HTML document assembly
 │   │   ├── sanitize.py          #    nh3/ammonia policy for untrusted HTML
 │   │   ├── vault.py             #    [[wiki links]], backlinks, note graph (pure Python)
+│   │   ├── sections.py          #    splits a note into headed sections + search metadata
+│   │   ├── query_analysis.py    #    typed words or pasted code → weighted search concepts
+│   │   ├── section_search.py    #    field-weighted section index, ranking, on-disk cache
+│   │   ├── search.py            #    title / heading search with filters
+│   │   ├── gif.py               #    animated-GIF detection for the PDF export
 │   │   ├── sync/                #    vault sharing on the LAN (no Qt)
 │   │   │   ├── store.py         #       device key pair + trusted contacts
 │   │   │   ├── channel.py       #       SPAKE2 + Ed25519 handshake, encrypted frames
@@ -777,11 +799,14 @@ emdee/
 │   ├── ui/
 │   │   ├── main_window.py       #    PyDracula shell, wiring, actions
 │   │   ├── title_bar.py         #    frameless chrome (startSystemMove/Resize)
+│   │   ├── win_chrome.py        #    native-frame custom chrome on Windows
 │   │   ├── editor.py            #    QPlainTextEdit + gutter + smart Enter
 │   │   ├── highlighter.py       #    QSyntaxHighlighter for Markdown
 │   │   ├── preview.py           #    QWebEngineView + QWebChannel scroll sync
 │   │   ├── file_tree.py         #    Markdown-filtered explorer
 │   │   ├── graph_view.py        #    force-directed note graph + backlinks
+│   │   ├── search_panel.py      #    find notes by title / heading (Ctrl+Shift+F)
+│   │   ├── advanced_search.py   #    section search overlay (Ctrl+E)
 │   │   ├── sync_dialog.py       #    "Share vaults": contacts, code, approvals
 │   │   ├── find_replace.py      #    inline find/replace with regex
 │   │   ├── settings_panel.py    #    sliding preferences drawer
@@ -796,6 +821,9 @@ emdee/
 │   ├── icons/hicolor/           # generated PNG + SVG icon theme
 │   ├── install.sh
 │   ├── uninstall.sh
+│   ├── arch/PKGBUILD            # Arch Linux package
+│   ├── linux/
+│   │   └── build-appimage.sh    #    self-contained x86_64 AppImage
 │   └── windows/
 │       ├── emdee.spec           #    PyInstaller build, verifies its own output
 │       ├── emdee.iss            #    Inno Setup installer
@@ -805,10 +833,11 @@ emdee/
 │       └── build.ps1            #    both artefacts, one command — used by CI too
 ├── .github/workflows/
 │   ├── ci.yml                   # ruff + pytest on Linux, pytest + build on Windows
-│   └── release.yml              # tagged builds published to a Release
+│   └── release.yml              # tagged builds (Windows + AppImage) published to a Release
 ├── tools/build_icons.py         # SVG → every size and the .ico, in one command
+├── docs/                        # guide to the search metadata for notes
 ├── pyproject.toml               # pytest + ruff configuration
-├── tests/                       # 330 tests, no QApplication required
+├── tests/                       # 430 tests, no QApplication required
 ├── screenshots/                 # images used by this README
 ├── WELCOME.md                   # feature-complete demo document
 ├── requirements.txt
@@ -830,6 +859,7 @@ emdee/
 | Sanitising | nh3 (Mozilla ammonia / html5ever) |
 | Highlighting | Pygments (editor: a custom `QSyntaxHighlighter`) |
 | Shell design | PyDracula patterns, reimplemented for PyQt6 |
+| Linux packaging | AppImage (python-appimage base) · PKGBUILD for Arch |
 | Windows packaging | PyInstaller · Inno Setup 6 |
 | Tests / lint | pytest · ruff · GitHub Actions on both platforms |
 
@@ -863,7 +893,7 @@ by hand means nine themes × four stylesheets = 36 files to keep in sync, and th
 Instead, [`palettes.py`](app/themes/palettes.py) holds twelve colours per theme
 and everything else is derived: hover tints, selection backgrounds, code
 backgrounds, and — importantly — contrast-corrected foregrounds for each
-surface. Adding a ninth theme means adding twelve hex codes. Nothing else.
+surface. Adding a tenth theme means adding twelve hex codes. Nothing else.
 
 It also makes accessibility testable rather than aspirational: because the
 corrections happen in one function, [one test](tests/test_contrast.py) can walk
@@ -949,7 +979,7 @@ decorations if the custom chrome misbehaves.
 python -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 
-.venv/bin/python -m pytest              # 179 tests
+.venv/bin/python -m pytest              # 430 tests
 .venv/bin/ruff check              # lint (configured in pyproject.toml)
 .venv/bin/python tools/build_icons.py --check   # regenerate icons + contact sheet
 ```
@@ -1001,6 +1031,11 @@ Done since the first release:
 - [x] **Windows packaging** — portable build and an Inno Setup installer
 - [x] **CI** — ruff and pytest on Linux, pytest and a packaged build on Windows,
       tagged releases published automatically
+- [x] **Linux packaging** — a self-contained AppImage and an Arch `PKGBUILD`
+- [x] **Linked notes** — `[[wiki links]]`, backlinks and the graph view
+- [x] **Vault sharing** — encrypted pairing and sync between devices on the LAN
+- [x] **Section search** — find the part of a note that explains something
+- [x] **Nine themes**, including Teal Diva and Capricorn
 
 Ideas, not commitments:
 
@@ -1009,7 +1044,7 @@ Ideas, not commitments:
 - [ ] Mermaid and KaTeX rendering in the preview
 - [ ] Custom user themes loaded from a config file
 - [ ] Spell checking
-- [ ] Linux binary packaging — AppImage, Flatpak, AUR
+- [ ] A Flatpak, and the Arch package published to the AUR
 - [ ] Code signing for the Windows builds, so SmartScreen stops warning
 - [ ] A macOS port, if someone wants to maintain it
 
