@@ -51,7 +51,7 @@ A desktop Markdown editor built around one idea: **plain text on the left, a
 real browser engine on the right, and one set of colours driving both.**
 
 Write in a syntax-highlighted plain-text editor, watch a properly styled preview
-update as you type, and switch between eight themes without restarting anything.
+update as you type, and switch between nine themes without restarting anything.
 Export what you see to a self-contained HTML file or a PDF.
 
 <div align="center">
@@ -122,6 +122,31 @@ Export what you see to a self-contained HTML file or a PDF.
   not exist yet are dashed nodes
 - ↩️ **Backlinks** under the graph: every note that points at the one you are
   reading
+- 🔎 **Find notes by title** (`Ctrl+Shift+F`) as you type: matches the note
+  title and its headings (H1, H2…), so each result lists the headings that
+  matched. Forgiving about word forms (`forma` also finds *formas* and
+  *formación*), the start of a word is enough, accents are optional and small
+  typos are forgiven. Narrow it to one folder (or right-click a folder →
+  *Search in…*; with an empty box it lists that folder's notes) and filter with
+  `"exact phrase"`, `-exclude`, `tag:exam`, `in:folder` or any front-matter
+  `field:value`. Picking a result (click, or just ↓/↑) opens the note **at that
+  heading**, highlighted in the preview and the editor; `F3` / `Shift+F3` jump
+  between the marked headings. To search what the notes *say*, use the
+  advanced search below
+- 🎯 **Advanced search** (`Ctrl+E`): a big search box over the window that finds the
+  **section** where something is explained, not just the note. Type a few words
+  or a question (`crear un dataframe` finds *Construcción de DataFrames*), or
+  paste code, a traceback or a whole exercise statement: emdee pulls out the calls
+  (`pd.read_csv`, `.groupby`), keyword arguments, exception names and error
+  messages and matches them against your code blocks. Results read
+  *Note › Heading › Subheading* with the matching lines and a preview of the
+  section; ↑/↓ and Enter jump straight to the heading, words highlighted.
+  Synonyms in Spanish and English (`crear` ≈ `construir` ≈ `create`), word forms
+  and typos all count. Sections can carry an invisible `<!-- busca … -->`
+  comment with keywords, purpose, typical questions, API and errors that ranks
+  them first — see [the metadata guide](docs/guia-metadatos-notas.md), written
+  to be pasted into whatever writes your notes. Fully offline; the index is
+  cached on disk, so even thousands of notes open and answer in milliseconds
 - 🔁 **Share vaults between your devices** (`Ctrl+Shift+Y`) over the local
   network: pair once, then receive, send or two-way sync a folder. End-to-end
   encrypted, every operation needs a fresh one-time code *and* the other
@@ -206,6 +231,7 @@ Swatches are `bg` · `surface` · `text` · `accent` · `accent2` · `green`.
 | **Nord** | dark | ![](https://img.shields.io/badge/-2e3440-2e3440?style=flat-square) ![](https://img.shields.io/badge/-434c5e-434c5e?style=flat-square) ![](https://img.shields.io/badge/-eceff4-eceff4?style=flat-square) ![](https://img.shields.io/badge/-88c0d0-88c0d0?style=flat-square) ![](https://img.shields.io/badge/-b48ead-b48ead?style=flat-square) ![](https://img.shields.io/badge/-a3be8c-a3be8c?style=flat-square) | `#2e3440` · `#88c0d0` · `#b48ead` |
 | **Teal Diva Night** | dark | ![](https://img.shields.io/badge/-191d22-191d22?style=flat-square) ![](https://img.shields.io/badge/-232a31-232a31?style=flat-square) ![](https://img.shields.io/badge/-e6f4f3-e6f4f3?style=flat-square) ![](https://img.shields.io/badge/-39c5bb-39c5bb?style=flat-square) ![](https://img.shields.io/badge/-ff5fa8-ff5fa8?style=flat-square) ![](https://img.shields.io/badge/-7fe0b0-7fe0b0?style=flat-square) | `#191d22` · `#39c5bb` · `#ff5fa8` |
 | **Teal Diva Day** | light | ![](https://img.shields.io/badge/-f4fbfb-f4fbfb?style=flat-square) ![](https://img.shields.io/badge/-dcefee-dcefee?style=flat-square) ![](https://img.shields.io/badge/-1e2a2f-1e2a2f?style=flat-square) ![](https://img.shields.io/badge/-13968d-13968d?style=flat-square) ![](https://img.shields.io/badge/-c81d77-c81d77?style=flat-square) ![](https://img.shields.io/badge/-1f8a5b-1f8a5b?style=flat-square) | `#f4fbfb` · `#13968d` · `#c81d77` |
+| **Capricorn** | dark | ![](https://img.shields.io/badge/-0a0a0a-0a0a0a?style=flat-square) ![](https://img.shields.io/badge/-1c1214-1c1214?style=flat-square) ![](https://img.shields.io/badge/-fff4f4-fff4f4?style=flat-square) ![](https://img.shields.io/badge/-2dff72-2dff72?style=flat-square) ![](https://img.shields.io/badge/-ff2f56-ff2f56?style=flat-square) ![](https://img.shields.io/badge/-3d8bff-3d8bff?style=flat-square) | `#0a0a0a` · `#2dff72` · `#ff2f56` |
 
 Some published `muted` values (Dracula's `#6272a4`, for one) do not reach 4.5:1
 against their own background. Emdee keeps the literal palette in
@@ -468,6 +494,10 @@ emdee vault check ~/apuntes --json       # the same, machine-readable
 emdee vault graph ~/apuntes              # nodes + edges as JSON (--format dot|mermaid)
 emdee vault backlinks ~/apuntes Mitosis  # who links to a note
 emdee vault links ~/apuntes Mitosis      # where a note's links resolve
+emdee vault search ~/apuntes crear un dataframe   # the sections that explain it (--json, --in, --exact)
+pbpaste | emdee vault search ~/apuntes --stdin     # paste code, a traceback or a statement
+emdee vault search ~/apuntes merge --explain       # how the query was read and why each result ranks
+emdee vault search ~/apuntes crear --notes         # whole notes with every matching line
 emdee vault init ~/apuntes               # write AGENTS.md + CLAUDE.md with note conventions
 ```
 
@@ -571,6 +601,9 @@ supported Markdown feature.
 | `Ctrl+Shift+3` | Preview only |
 | `F9` | Toggle explorer |
 | `Ctrl+G` | Toggle graph view |
+| `Ctrl+Shift+F` | Find notes by title or heading |
+| `Ctrl+E` | Advanced search: the section that explains something |
+| `F3` / `Shift+F3` | Next / previous search hit |
 | `Ctrl+Shift+Y` | Share vaults |
 | `F10` | Toggle preferences |
 | `Ctrl+=` / `Ctrl+-` | Editor font size |
@@ -735,7 +768,7 @@ emdee/
 │   │   │   └── session.py       #       one-shot listener, pair / pull / push / sync
 │   │   └── settings.py          #    typed QSettings wrapper (QtCore only)
 │   ├── themes/
-│   │   ├── palettes.py          #    the eight palettes — the only place colours live
+│   │   ├── palettes.py          #    the nine palettes — the only place colours live
 │   │   ├── contrast.py          #    WCAG maths + the readability corrector
 │   │   ├── qss_template.py      #    application stylesheet template
 │   │   ├── preview_css.py       #    preview / export / print stylesheet template
@@ -824,7 +857,7 @@ editor whose entire job is showing formatted documents, that is the right trade.
 
 A theme has to reach four places at once: the Qt stylesheet, the preview CSS,
 the editor's syntax highlighter and the Pygments code style. Maintaining those
-by hand means eight themes × four stylesheets = 32 files to keep in sync, and they
+by hand means nine themes × four stylesheets = 36 files to keep in sync, and they
 *will* drift.
 
 Instead, [`palettes.py`](app/themes/palettes.py) holds twelve colours per theme

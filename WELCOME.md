@@ -182,6 +182,8 @@ they could reach anyone you send an HTML export to.
 | Change the theme          | `F10`, then pick a swatch                  |
 | Hide the preview          | `Ctrl+Shift+1`                             |
 | Search with a regex       | `Ctrl+F`, then toggle `.*`                 |
+| Find notes by title       | `Ctrl+Shift+F` — titles and headings, any word form |
+| Find where it's explained | `Ctrl+E` — words, a question, pasted code or an error → the exact section |
 | Publish this as a webpage | `Ctrl+Shift+E` — one self-contained file   |
 | Print it                  | `Ctrl+P` — PDF with the current theme      |
 

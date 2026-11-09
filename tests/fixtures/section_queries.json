@@ -1,0 +1,36 @@
+[
+  {"query": "crear un dataframe", "expect": "pandas/DataFrames.md#Construcción de DataFrames", "top": 1},
+  {"query": "create dataframe", "expect": "pandas/DataFrames.md#Construcción de DataFrames", "top": 1},
+  {"query": "construir una tabla a partir de un diccionario", "expect": "pandas/DataFrames.md#Construcción de DataFrames", "top": 1},
+  {"query": "datafrme nuevo", "expect": "pandas/DataFrames.md#Construcción de DataFrames", "top": 1},
+  {"query": "cómo quito los valores nulos", "expect": "pandas/DataFrames.md#Valores nulos", "top": 1},
+  {"query": "rellenar NaN con la media", "expect": "pandas/DataFrames.md#Valores nulos", "top": 1},
+  {"query": "diferencia entre loc e iloc", "expect": "pandas/DataFrames.md#Selección de columnas y filas", "top": 1},
+  {"query": "filtrar filas con una condición", "expect": "pandas/DataFrames.md#Filtrar filas por condición", "top": 1},
+  {"query": "agrupar por ciudad y sacar la media", "expect": "pandas/Agrupaciones.md#groupby básico", "top": 1},
+  {"query": "ordenar de mayor a menor", "expect": "pandas/Agrupaciones.md#Ordenar resultados", "top": 1},
+  {"query": "unir dos tablas por una columna", "expect": "pandas/Combinar tablas.md#merge", "top": 1},
+  {"query": "pd.concat", "expect": "pandas/Combinar tablas.md#concat", "top": 1},
+  {"query": "guardar sin el índice", "expect": "pandas/Lectura y escritura.md#Guardar a CSV", "top": 1},
+  {"query": "leer un csv separado por punto y coma", "expect": "pandas/Lectura y escritura.md#Leer CSV con read_csv", "top": 1},
+  {"query": "lanzar una excepción", "expect": "python/Excepciones.md#Lanzar excepciones con raise", "top": 1},
+  {"query": "recorrer diccionario", "expect": "python/Diccionarios.md#Recorrer un diccionario", "top": 1},
+  {"query": "fases de la mitosis", "expect": "biologia/Mitosis.md#Fases", "top": 1},
+  {"query": "tag:pandas crear", "expect": "pandas/DataFrames.md#Construcción de DataFrames", "top": 1},
+
+  {"query": "df.groupby('ciudad')['ventas'].agg(['mean', 'sum'])", "expect": "pandas/Agrupaciones.md#Varias funciones con agg", "top": 1},
+  {"query": "df = pd.read_csv('datos.csv', sep=';', encoding='latin-1')", "expect": "pandas/Lectura y escritura.md#Leer CSV con read_csv", "top": 1},
+  {"query": "resultado = pd.merge(a, b, on='id', how='left')\nprint(resultado.head())", "expect": "pandas/Combinar tablas.md#merge", "top": 1},
+  {"query": "df = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})", "expect": "pandas/DataFrames.md#Construcción de DataFrames", "top": 1},
+  {"query": "df.sort_values('ventas', ascending=False).head(5)", "expect": "pandas/Agrupaciones.md#Ordenar resultados", "top": 1},
+  {"query": "for k, v in edades.items():\n    print(k, v)", "expect": "python/Diccionarios.md#Recorrer un diccionario", "top": 1},
+  {"query": "try:\n    x = int(s)\nexcept ValueError as e:\n    print(e)", "expect": "python/Excepciones.md#Capturar errores con try", "top": 1},
+
+  {"query": "ValueError: All arrays must be of the same length", "expect": "pandas/DataFrames.md#Construcción de DataFrames", "top": 1},
+  {"query": "Traceback (most recent call last):\n  File \"script.py\", line 3, in <module>\n    df = pd.read_csv(\"notas.csv\")\nUnicodeDecodeError: 'utf-8' codec can't decode byte 0xf3 in position 12: invalid continuation byte", "expect": "pandas/Lectura y escritura.md#Leer CSV con read_csv", "top": 1},
+  {"query": "Traceback (most recent call last):\n  File \"script.py\", line 5, in <module>\n    print(df[\"edad\"])\n  File \"/usr/lib/python3/site-packages/pandas/core/frame.py\", line 3761, in __getitem__\n    indexer = self.columns.get_loc(key)\nKeyError: 'edad'", "expect": "pandas/DataFrames.md#Selección de columnas y filas", "top": 1},
+  {"query": "ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().", "expect": "pandas/DataFrames.md#Filtrar filas por condición", "top": 1},
+
+  {"query": "Disponemos de un fichero con las ventas de una cadena de tiendas. Para cada ciudad, calcula la media de las ventas y muestra el resultado ordenado de mayor a menor. Indica qué método de pandas usarías para agrupar los datos.", "expect": "pandas/Agrupaciones.md#groupby básico", "top": 2},
+  {"query": "Explica qué ocurre al unir dos DataFrames con how='left' cuando una clave de la tabla izquierda no aparece en la derecha.", "expect": "pandas/Combinar tablas.md#merge", "top": 1}
+]

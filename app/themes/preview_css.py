@@ -158,6 +158,26 @@ mark {
     padding: 0 3px;
 }
 
+/* Vault search hits: every match, and the one the search jumped to. */
+mark.emdee-hit {
+    padding: 0 1px;
+    border-radius: 2px;
+}
+
+/* The section an advanced search jumped to, marked for a moment. */
+.emdee-section {
+    background: {accent_soft};
+    box-shadow: 0 0 0 6px {accent_soft};
+    border-radius: 3px;
+    transition: background 0.6s, box-shadow 0.6s;
+}
+
+mark.emdee-hit.current {
+    background: {accent};
+    color: {accent_contrast};
+    box-shadow: 0 0 0 3px {accent_soft};
+}
+
 abbr {
     border-bottom: 1px dotted {muted_on_bg};
     cursor: help;

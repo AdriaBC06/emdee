@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFileSystemModel
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QLabel,
+    QMenu,
     QSizePolicy,
     QTreeView,
     QVBoxLayout,
@@ -53,6 +54,8 @@ class FileTree(QWidget):
     """Folder tree that opens Markdown files on click."""
 
     file_activated = pyqtSignal(Path)
+    #: "Search in this folder" from the context menu.
+    search_requested = pyqtSignal(Path)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -96,6 +99,8 @@ class FileTree(QWidget):
             self._view.hideColumn(column)
         self._view.clicked.connect(self._on_clicked)
         self._view.activated.connect(self._on_clicked)
+        self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._view.customContextMenuRequested.connect(self._show_context_menu)
         self._view.hide()
 
         layout.addWidget(self._empty)
@@ -149,6 +154,21 @@ class FileTree(QWidget):
         del palette
 
     # ---------------------------------------------------------------- events
+    def _show_context_menu(self, pos) -> None:
+        if self._root is None:
+            return
+        index = self._view.indexAt(pos)
+        if index.isValid():
+            path = Path(self._model.filePath(index))
+            folder = path if self._model.isDir(index) else path.parent
+        else:
+            folder = self._root
+        menu = QMenu(self)
+        label = "Search in whole folder" if folder == self._root else f"Search in “{folder.name}”"
+        menu.addAction(label, lambda: self.search_requested.emit(folder))
+        viewport = self._view.viewport()
+        menu.exec(viewport.mapToGlobal(pos) if viewport is not None else pos)
+
     def _on_clicked(self, index: QModelIndex) -> None:
         if not index.isValid() or self._model.isDir(index):
             return

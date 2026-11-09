@@ -44,7 +44,7 @@ PREVIEW_DEBOUNCE_MS = 250
 
 _SHELL_SCRIPT = r"""
 (function () {
-    const state = { items: [], suppressUntil: 0, ready: false };
+    const state = { items: [], suppressUntil: 0, ready: false, hits: null, current: -1 };
 
     function collect() {
         state.items = Array.prototype.slice
@@ -91,16 +91,166 @@ _SHELL_SCRIPT = r"""
         return prev.item.line + (next.item.line - prev.item.line) * ratio;
     }
 
+    // ------------------------------------------------ vault search hits
+    // ``state.hits`` = { re, lines, index }: the words to mark, the source line
+    // of every hit in document order, and which of them the user jumped to.
+    function markHits() {
+        const article = document.querySelector('article');
+        if (!state.hits || !article) { return []; }
+        let re;
+        try { re = new RegExp(state.hits.re, 'giu'); } catch (e) { return []; }
+        const range = state.hits.range;
+        const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
+            acceptNode: function (node) {
+                const parent = node.parentElement;
+                if (!parent || parent.closest('script, style, mark.emdee-hit')) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                if (range) {
+                    // Only inside the source lines of one section.
+                    const line = sourceLineOf(parent, article);
+                    if (isNaN(line) || line < range[0] || line > range[1]) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        const nodes = [];
+        while (walker.nextNode()) { nodes.push(walker.currentNode); }
+        nodes.forEach(function (node) {
+            const text = node.nodeValue;
+            re.lastIndex = 0;
+            let match, last = 0, fragment = null;
+            while ((match = re.exec(text)) !== null) {
+                if (!match[0]) { re.lastIndex++; continue; }
+                fragment = fragment || document.createDocumentFragment();
+                fragment.appendChild(document.createTextNode(text.slice(last, match.index)));
+                const mark = document.createElement('mark');
+                mark.className = 'emdee-hit';
+                mark.textContent = match[0];
+                fragment.appendChild(mark);
+                last = match.index + match[0].length;
+            }
+            if (fragment) {
+                fragment.appendChild(document.createTextNode(text.slice(last)));
+                node.parentNode.replaceChild(fragment, node);
+            }
+        });
+        return Array.prototype.slice.call(article.querySelectorAll('mark.emdee-hit'));
+    }
+
+    // The source line of the block holding ``el``.  Highlighted code blocks
+    // carry none, so they take the line of the closest block before them.
+    function sourceLineOf(el, article) {
+        const block = el.closest('[data-source-line]');
+        if (block) { return parseInt(block.getAttribute('data-source-line'), 10); }
+        let top = el;
+        while (top.parentElement && top.parentElement !== article) { top = top.parentElement; }
+        for (let sib = top; sib; sib = sib.previousElementSibling) {
+            if (sib.hasAttribute && sib.hasAttribute('data-source-line')) {
+                return parseInt(sib.getAttribute('data-source-line'), 10);
+            }
+        }
+        return NaN;
+    }
+
+    function clearHits() {
+        const article = document.querySelector('article');
+        if (!article) { return; }
+        article.querySelectorAll('mark.emdee-hit').forEach(function (mark) {
+            mark.replaceWith(document.createTextNode(mark.textContent));
+        });
+        article.normalize();
+    }
+
+    // The mark for hit number ``index``: the block holding its source line,
+    // then the right occurrence inside that block.
+    function markForHit(marks, index) {
+        const lines = state.hits.lines;
+        if (!marks.length) { return -1; }
+        if (index < 0 || index >= lines.length) { return 0; }
+        const line = lines[index];
+        let block = null;
+        for (let i = 0; i < state.items.length; i++) {
+            if (state.items[i].line <= line) { block = state.items[i]; } else { break; }
+        }
+        if (block) {
+            let before = 0;
+            for (let i = 0; i < index; i++) { if (lines[i] < block.line) { before++; } }
+            const inside = marks.filter(function (m) { return block.el.contains(m); });
+            if (inside.length) {
+                return marks.indexOf(inside[Math.max(0, Math.min(index - before, inside.length - 1))]);
+            }
+            const top = topOf(block.el) - 1;
+            for (let i = 0; i < marks.length; i++) { if (topOf(marks[i]) >= top) { return i; } }
+        }
+        return 0;
+    }
+
+    function focusMark(marks, which, scroll) {
+        marks.forEach(function (m) { m.classList.remove('current'); });
+        state.current = which;
+        if (which < 0 || which >= marks.length) { return; }
+        const mark = marks[which];
+        mark.classList.add('current');
+        if (scroll) {
+            // Open any collapsed <details> the hit sits in, then centre it.
+            for (let el = mark.parentElement; el; el = el.parentElement) {
+                if (el.tagName === 'DETAILS') { el.open = true; }
+            }
+            state.suppressUntil = Date.now() + 400;
+            const rect = mark.getBoundingClientRect();
+            window.scrollTo(0, Math.max(0, rect.top + window.scrollY - window.innerHeight / 3));
+        }
+    }
+
     window.emdee = {
         setContent: function (html) {
             const article = document.querySelector('article');
             const y = window.scrollY;
             article.innerHTML = html;
             collect();
+            if (state.hits) { focusMark(markHits(), state.current, false); }
             window.scrollTo(0, y);
+        },
+        highlight: function (source, lines, index, scroll, range) {
+            clearHits();
+            state.hits = source ? { re: source, lines: lines || [], range: range || null } : null;
+            state.current = -1;
+            if (!state.hits) { return 0; }
+            const marks = markHits();
+            focusMark(marks, index >= 0 ? markForHit(marks, index) : -1, scroll && index >= 0);
+            return marks.length;
+        },
+        stepHit: function (delta) {
+            const marks = Array.prototype.slice.call(document.querySelectorAll('mark.emdee-hit'));
+            if (!marks.length) { return; }
+            let next = state.current < 0 ? (delta > 0 ? 0 : marks.length - 1)
+                                          : (state.current + delta + marks.length) % marks.length;
+            focusMark(marks, next, true);
         },
         setCss: function (css) {
             document.getElementById('emdee-theme').textContent = css;
+        },
+        // Put the block that starts at ``line`` (a section heading) near the
+        // top and mark it for a moment, so the eye lands on it.
+        flashLine: function (line) {
+            let target = null;
+            for (let i = 0; i < state.items.length; i++) {
+                if (state.items[i].line <= line) { target = state.items[i]; } else { break; }
+            }
+            if (!target) { return; }
+            for (let el = target.el.parentElement; el; el = el.parentElement) {
+                if (el.tagName === 'DETAILS') { el.open = true; }
+            }
+            document.querySelectorAll('.emdee-section').forEach(function (el) {
+                el.classList.remove('emdee-section');
+            });
+            state.suppressUntil = Date.now() + 400;
+            window.scrollTo(0, Math.max(0, topOf(target.el) - 16));
+            target.el.classList.add('emdee-section');
+            setTimeout(function () { target.el.classList.remove('emdee-section'); }, 1800);
         },
         scrollToLine: function (line) {
             state.suppressUntil = Date.now() + 200;
@@ -263,6 +413,8 @@ class MarkdownPreview(QWebEngineView):
         self._last_body: str | None = None
         self._loaded = False
         self._reload_queued = False
+        self._hits: tuple[str, list[int], int, tuple[int, int] | None] | None = None
+        self._flash_pending: int | None = None
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -382,6 +534,13 @@ class MarkdownPreview(QWebEngineView):
         if self._pending_html is not None:
             self._push_content(self._pending_html)
             self._pending_html = None
+        if self._hits is not None:
+            # A shell reload (new folder, new theme) dropped the marks.
+            pattern, lines, index, within = self._hits
+            self._run_highlight(pattern, lines, index, self._flash_pending is None, within)
+        if self._flash_pending is not None:
+            self._run(f"window.emdee.flashLine({self._flash_pending});")
+            self._flash_pending = None
 
     def _run(self, script: str) -> None:
         self._page.runJavaScript(script)
@@ -417,10 +576,69 @@ class MarkdownPreview(QWebEngineView):
     def show_empty_state(self) -> None:
         self.set_body(page_builder.EMPTY_STATE_HTML)
 
+    # ---------------------------------------------------------- search hits
+    def highlight_hits(
+        self,
+        words: list[str],
+        lines: list[int],
+        index: int = -1,
+        *,
+        scroll: bool = True,
+        within: tuple[int, int] | None = None,
+    ) -> None:
+        """Mark every occurrence of ``words``; make hit ``index`` current.
+
+        ``lines`` is the source line of each hit in document order, which is
+        how hit ``index`` is found again among the rendered marks.  With
+        ``within`` (first, last source line) only that stretch is marked.
+        The marks survive re-renders until :meth:`clear_hits`.
+        """
+        if not words:
+            self.clear_hits()
+            return
+        # Words are letters and digits only (the search tokenizer's \w), so
+        # they need no escaping in the pattern.
+        alternation = "|".join(sorted(set(words), key=len, reverse=True))
+        pattern = rf"(?<![\p{{L}}\p{{N}}])(?:{alternation})(?![\p{{L}}\p{{N}}])"
+        self._hits = (pattern, list(lines), index, within)
+        if self._loaded:
+            self._run_highlight(pattern, list(lines), index, scroll, within)
+
+    def _run_highlight(
+        self,
+        pattern: str,
+        lines: list[int],
+        index: int,
+        scroll: bool,
+        within: tuple[int, int] | None = None,
+    ) -> None:
+        self._run(
+            f"window.emdee.highlight({json.dumps(pattern)}, {json.dumps(lines)}, "
+            f"{int(index)}, {'true' if scroll else 'false'}, "
+            f"{json.dumps(list(within)) if within else 'null'});"
+        )
+
+    def clear_hits(self) -> None:
+        self._hits = None
+        if self._loaded:
+            self._run("window.emdee.highlight(null, [], -1, false);")
+
+    def step_hit(self, delta: int) -> None:
+        """Move the current hit forwards or backwards and scroll to it."""
+        if self._loaded and self._hits is not None:
+            self._run(f"window.emdee.stepHit({int(delta)});")
+
     # -------------------------------------------------------------- scroll
     def scroll_to_line(self, line: float) -> None:
         if self._loaded:
             self._run(f"window.emdee.scrollToLine({float(line)});")
+
+    def flash_line(self, line: int) -> None:
+        """Scroll the block starting at source ``line`` to the top and mark it briefly."""
+        if self._loaded:
+            self._run(f"window.emdee.flashLine({int(line)});")
+        else:
+            self._flash_pending = int(line)
 
     # --------------------------------------------------------------- links
     @staticmethod

@@ -10,14 +10,18 @@ them to widgets and to the user's intent.
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
+import re
 import time
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
+from pygments.formatters import HtmlFormatter
 from PyQt6.QtCore import (
     QBuffer,
     QByteArray,
@@ -57,6 +61,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -69,12 +74,16 @@ from ..core.document import Document
 from ..core.file_service import MARKDOWN_SUFFIXES, FileError
 from ..core.gif import animated_gif_sources
 from ..core.renderer import MarkdownRenderer, WikiTarget, inline_local_images, slugify
+from ..core.search import SearchIndex, parse_query
+from ..core.section_search import SectionResult, term_ranges
 from ..core.settings import Settings, ViewMode
 from ..core.vault import NOTE_SUFFIXES, Link, Vault
 from ..paths import app_logo
 from ..platform_support import uses_native_frame_hit_testing
 from ..themes.manager import ThemeManager
+from ..themes.pygments_style import style_for
 from .about import AboutDialog
+from .advanced_search import AdvancedSearch
 from .editor import MarkdownEditor
 from .file_tree import FileTree
 from .find_replace import FindReplacePanel
@@ -82,6 +91,7 @@ from .graph_view import GraphView
 from .highlighter import MarkdownHighlighter
 from .icons import app_icon, themed_icon
 from .preview import MarkdownPreview
+from .search_panel import SearchPanel
 from .settings_panel import SettingsPanel
 from .title_bar import TitleBar
 from .toolbar import ToolStrip
@@ -109,6 +119,10 @@ SYNC_GUARD_MS = 140
 #: How often the open folder is re-scanned for notes changed by other programs
 #: (an AI agent writing notes, a sync client…).  Backs off on huge folders.
 VAULT_REFRESH_MS = 2000
+#: After opening a folder, how long to wait before indexing it for search.
+SEARCH_PREWARM_MS = 800
+#: The on-disk search cache is rewritten this long after the index changes.
+SEARCH_CACHE_SAVE_MS = 30_000
 
 _MARKDOWN_FILTER = (
     "Markdown documents (*.md *.markdown *.mdown *.mkd *.mdx);;"
@@ -222,11 +236,33 @@ class MainWindow(QMainWindow):
         self._reload_pending = False
         self._view_mode = settings.view_mode
         self._vault: Vault | None = None
+        #: Built on first use of the search panel, then kept in step with the vault.
+        self._search_index: SearchIndex | None = None
+        #: The index being built in the background: ``(vault, future)``.
+        self._search_build: tuple[Vault, Future[tuple[SearchIndex, bool]]] | None = None
+        self._search_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="emdee-index")
+        self._search_cache_dirty = False
+        #: Offsets of the search hits highlighted in the open note, and which
+        #: one F3 / Shift+F3 last moved to.
+        self._search_hits: list[tuple[int, int]] = []
+        self._search_hit = -1
+        self._side_switching = False
         self._sync_dialog: QDialog | None = None
         self._renderer.wiki_resolver = self._resolve_wikilink
         self._vault_timer = QTimer(self)
         self._vault_timer.setSingleShot(True)
         self._vault_timer.timeout.connect(self._refresh_vault)
+        self._search_hit_timer = QTimer(self)
+        self._search_hit_timer.setSingleShot(True)
+        self._search_hit_timer.setInterval(300)
+        self._search_hit_timer.timeout.connect(lambda: self._apply_search_hits(None))
+        self._search_build_timer = QTimer(self)
+        self._search_build_timer.setInterval(40)
+        self._search_build_timer.timeout.connect(self._poll_search_build)
+        self._search_cache_timer = QTimer(self)
+        self._search_cache_timer.setSingleShot(True)
+        self._search_cache_timer.setInterval(SEARCH_CACHE_SAVE_MS)
+        self._search_cache_timer.timeout.connect(self._save_search_cache)
 
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
@@ -372,6 +408,19 @@ class MainWindow(QMainWindow):
             "Preferences", self.toggle_settings_panel, "F10"
         )
         self.act_toggle_graph = self._toggle_action("Graph", self.toggle_graph, "Ctrl+G")
+        self.act_toggle_search = self._toggle_action(
+            "Search", self.toggle_search, "Ctrl+Shift+F"
+        )
+        self.act_toggle_search.setToolTip("Find notes by title or heading  (Ctrl+Shift+F)")
+        self.act_advanced_search = self._action(
+            "Advanced search", self.show_advanced_search, "Ctrl+E",
+            tip="Find the section that explains something: words, a question, pasted "
+                "code or an error  (Ctrl+E)",
+        )
+        self.act_next_hit = self._action("Next search hit", lambda: self._step_search_hit(1), "F3")
+        self.act_prev_hit = self._action(
+            "Previous search hit", lambda: self._step_search_hit(-1), "Shift+F3"
+        )
         self.act_share = self._action(
             "Share vaults", self.show_sync, "Ctrl+Shift+Y",
             tip="Share or sync this folder with your devices on the local network",
@@ -422,6 +471,9 @@ class MainWindow(QMainWindow):
         elif not self._use_native_chrome:
             self._build_grips(root)
 
+        # Over everything else, shown on demand.
+        self._advanced = AdvancedSearch(lambda text: self._renderer.render(text).html, root)
+
     # ------------------------------------------------------------------ rail
     def _rail_button(self, action: QAction, icon: str) -> QPushButton:
         button = QPushButton(action.text(), self._rail)
@@ -467,6 +519,7 @@ class MainWindow(QMainWindow):
 
         for action, icon in (
             (self.act_toggle_files, "folder"),
+            (self.act_toggle_search, "search"),
             (self.act_toggle_graph, "graph"),
             (self.act_share, "sync"),
             (self.act_new, "file-plus"),
@@ -540,8 +593,12 @@ class MainWindow(QMainWindow):
         header_layout.addStretch(1)
 
         self._file_tree = FileTree(self._file_panel)
+        self._search_panel = SearchPanel(self._file_panel)
+        self._side_stack = QStackedWidget(self._file_panel)
+        self._side_stack.addWidget(self._file_tree)
+        self._side_stack.addWidget(self._search_panel)
         layout.addWidget(header)
-        layout.addWidget(self._file_tree, 1)
+        layout.addWidget(self._side_stack, 1)
         return self._file_panel
 
     # ---------------------------------------------------------------- center
@@ -714,6 +771,8 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event: QResizeEvent | None) -> None:  # noqa: N802 - Qt API
         super().resizeEvent(event)
         self._reclaim_panel_width()
+        if self._advanced.isVisible():
+            self._advanced.setGeometry(self._advanced.parentWidget().rect())
         if not self._grips:
             return
         thickness = 6
@@ -750,7 +809,15 @@ class MainWindow(QMainWindow):
         self._graph.missing_activated.connect(self._create_missing_note)
 
         self._file_tree.file_activated.connect(self.open_path)
+        self._file_tree.search_requested.connect(self.search_in_folder)
+        self._search_panel.hit_activated.connect(lambda p, ln, n: self._open_search_hit(p, ln, n, True))
+        self._search_panel.hit_selected.connect(lambda p, ln, n: self._open_search_hit(p, ln, n, False))
+        self._search_panel.query_changed.connect(self._on_search_query_changed)
+        self._search_panel.close_requested.connect(lambda: self.act_toggle_search.setChecked(False))
+        self._advanced.section_chosen.connect(self._open_section)
+        self._advanced.closed.connect(self._editor.setFocus)
         self._find_panel.closed.connect(lambda: self._editor.setFocus())
+        self._find_panel.closed.connect(self._reapply_search_hits)
 
         self._settings_panel.theme_selected.connect(self.set_theme)
         self._settings_panel.editor_font_changed.connect(self._set_editor_font)
@@ -781,7 +848,7 @@ class MainWindow(QMainWindow):
         if folder is not None:
             self._file_tree.set_root(folder)
             self._set_vault(folder)
-            self._folder_label.setText(folder.name or str(folder))
+            self._update_side_header()
             # Reopening with a folder but no explorer would look broken.
             self._set_file_panel_width(self._file_panel_width())
             self.act_toggle_files.setChecked(True)
@@ -822,6 +889,10 @@ class MainWindow(QMainWindow):
         self._highlighter.set_palette(palette)
         self._editor.apply_palette(palette)
         self._file_tree.apply_palette(palette)
+        self._search_panel.apply_palette(palette)
+        self._advanced.apply_palette(
+            palette, HtmlFormatter(style=style_for(palette)).get_style_defs(".highlight")
+        )
         self._graph.apply_palette(palette)
         self._settings_panel.set_theme(key)
         self._settings_panel.refresh_swatches()
@@ -928,7 +999,7 @@ class MainWindow(QMainWindow):
         self._settings.last_folder = directory
         self._file_tree.set_root(directory)
         self._set_vault(directory)
-        self._folder_label.setText(directory.name or str(directory))
+        self._update_side_header()
         if not self.act_toggle_files.isChecked():
             self.act_toggle_files.setChecked(True)
         self._status(f"Opened folder {directory}")
@@ -1108,12 +1179,16 @@ class MainWindow(QMainWindow):
         self._preview.schedule_render()
         self._update_counts()
         self._find_panel.refresh_after_edit()
+        if self._search_hits and not self._find_panel.isVisible():
+            self._search_hit_timer.start()
         self._file_tree.mark_dirty(self._document.path, self._document.is_dirty)
 
     def _render_preview(self) -> None:
         vault, path = self._vault, self._document.path
         if vault is not None and path is not None and vault.update_text(path, self._document.text):
             self._graph.rebuild()
+        if self._search_index is not None and path is not None:
+            self._search_index.update_text(path, self._document.text)
         result = self._renderer.render(self._document.text)
         if result.html.strip():
             self._preview.set_body(result.html)
@@ -1247,6 +1322,18 @@ class MainWindow(QMainWindow):
         self._graph.set_vault(self._vault)
         self._graph.set_current(self._document.path)
         self._editor.set_link_names(self._vault.note_names() if self._vault else [])
+        if self._search_index is not None and self._search_index.vault is not self._vault:
+            self._save_search_cache()
+            self._search_index = None
+            self._clear_search_hits()
+            self._search_panel.set_index(None)
+            self._advanced.set_index(None)
+            if self.act_toggle_search.isChecked():
+                self._ensure_search_index()
+        if self._vault is not None and self._search_index is None:
+            # Have the index ready before it is asked for: from the cache this
+            # takes a moment, and it runs in the background either way.
+            QTimer.singleShot(SEARCH_PREWARM_MS, self._start_search_index)
 
     def _schedule_vault_refresh(self, delay: int = VAULT_REFRESH_MS) -> None:
         if self._vault is not None:
@@ -1267,6 +1354,15 @@ class MainWindow(QMainWindow):
             self._graph.rebuild()
             self._editor.set_link_names(vault.note_names())
             self._render_preview()
+            reindexed = self._search_index is not None and self._search_index.refresh()
+            if reindexed:
+                self._search_cache_dirty = True
+                self._search_cache_timer.start()
+            if reindexed and self.act_toggle_search.isChecked():
+                self._search_panel.refresh_scopes()
+                self._search_panel.run_search()
+            if reindexed and self._advanced.isVisible():
+                self._advanced.refresh_scopes()
         # A folder that takes long to scan is re-scanned less often.
         self._schedule_vault_refresh(max(VAULT_REFRESH_MS, elapsed_ms * 20))
 
@@ -1384,6 +1480,61 @@ class MainWindow(QMainWindow):
             button.setText(caption if self._rail_expanded else "")
 
     def toggle_file_panel(self, opening: bool) -> None:
+        self._toggle_side_panel(self.act_toggle_files, opening)
+
+    def toggle_search(self, opening: bool) -> None:
+        """Show the note search (titles and headings) in the side panel, in place of the explorer."""
+        self._toggle_side_panel(self.act_toggle_search, opening)
+        if opening:
+            if self._vault is None:
+                self._set_vault(self._settings.last_folder or self._document.directory)
+            self._ensure_search_index()
+            selection = self._editor.textCursor().selectedText().strip()
+            if selection and "\u2029" not in selection and len(selection) < 80:
+                self._search_panel.input.setText(selection)
+            self._search_panel.focus_input()
+        else:
+            self._clear_search_hits()
+            self._editor.setFocus()
+
+    def search_in_folder(self, folder: Path) -> None:
+        """Explorer context menu: search only inside ``folder``."""
+        if not self.act_toggle_search.isChecked():
+            self.act_toggle_search.setChecked(True)
+        if self._vault is None:
+            return
+        try:
+            rel = folder.resolve().relative_to(self._vault.root).as_posix()
+        except ValueError:
+            return
+        self._search_panel.set_scope("" if rel == "." else rel)
+        self._search_panel.focus_input()
+
+    def _toggle_side_panel(self, action: QAction, opening: bool) -> None:
+        """Explorer and Search share one panel: switch pages or slide it."""
+        if self._side_switching:
+            return
+        other = self.act_toggle_search if action is self.act_toggle_files else self.act_toggle_files
+        if opening:
+            self._side_stack.setCurrentWidget(
+                self._search_panel if action is self.act_toggle_search else self._file_tree
+            )
+            self._update_side_header()
+            if other.isChecked():
+                self._side_switching = True
+                other.setChecked(False)
+                self._side_switching = False
+                return  # already open, only the page changed
+        self._slide_file_panel(opening)
+
+    def _update_side_header(self) -> None:
+        folder = self._settings.last_folder
+        name = (folder.name or str(folder)) if folder is not None else "Explorer"
+        if self._side_stack.currentWidget() is self._search_panel:
+            name = f"Search · {name}" if folder is not None else "Search"
+        self._folder_label.setText(name)
+
+    def _slide_file_panel(self, opening: bool) -> None:
         target = self._file_panel_width() if opening else 0
         self._file_panel.setMinimumWidth(0)
         animation = self._animate_width(self._file_panel, target)
@@ -1453,7 +1604,7 @@ class MainWindow(QMainWindow):
             target = self._settings_panel_width(True)
             if target != self._settings_panel.width():
                 self._settings_panel.setFixedWidth(target)
-        if self.act_toggle_files.isChecked():
+        if self.act_toggle_files.isChecked() or self.act_toggle_search.isChecked():
             target = self._file_panel_width()
             if target != self._file_panel.maximumWidth():
                 self._set_file_panel_width(target)
@@ -1644,6 +1795,231 @@ class MainWindow(QMainWindow):
         self._settings.native_decorations = enabled
         self._status("Window decoration change takes effect after a restart")
 
+    # ================================================================= search
+    def _ensure_search_index(self) -> None:
+        """Make the search index ready now (waiting for a background build)."""
+        if self._vault is None:
+            self._search_panel.set_index(None)
+            return
+        if self._search_index is not None and self._search_index.vault is self._vault:
+            return
+        self._start_search_index()
+        if self._search_build is not None:
+            self._status("Indexing notes for search…")
+            QGuiApplication.processEvents()
+            self._search_build[1].result()
+            self._poll_search_build()
+
+    def _start_search_index(self) -> None:
+        """Load (from the cache) or build the search index in the background.
+
+        The worker gets a snapshot of the vault's notes, so the vault can go
+        on refreshing meanwhile; the index catches up when it is handed over.
+        """
+        vault = self._vault
+        if vault is None or self._search_build is not None:
+            return
+        if self._search_index is not None and self._search_index.vault is vault:
+            return
+        snapshot = copy.copy(vault)
+        snapshot.notes = dict(vault.notes)
+
+        def build() -> tuple[SearchIndex, bool]:
+            index = SearchIndex(snapshot)
+            loaded = index.load()
+            changed = index.refresh()
+            return index, changed or not loaded
+
+        self._search_build = (vault, self._search_pool.submit(build))
+        self._search_build_timer.start()
+        self._advanced.set_index(None, f"Indexing {len(snapshot.notes)} notes…")
+
+    def _poll_search_build(self) -> None:
+        if self._search_build is None:
+            self._search_build_timer.stop()
+            return
+        vault, future = self._search_build
+        if not future.done():
+            return
+        self._search_build_timer.stop()
+        self._search_build = None
+        if vault is not self._vault:
+            self._start_search_index()  # the folder changed while it was building
+            return
+        try:
+            index, changed = future.result()
+        except Exception:  # noqa: BLE001 - fall back to building here
+            log.exception("background search indexing failed")
+            index, changed = SearchIndex(vault), True
+        index.vault = vault
+        changed = index.refresh() or changed  # catch up with the live vault
+        if self._document.path is not None and self._document.is_dirty:
+            index.update_text(self._document.path, self._document.text)
+        self._search_index = index
+        self._search_panel.set_index(index)
+        self._advanced.set_index(index)
+        if changed:
+            self._search_cache_dirty = True
+            self._search_cache_timer.start()
+        self._status(f"Indexed {len(index.docs)} notes, {len(index.sections)} sections")
+
+    def _save_search_cache(self) -> None:
+        """Write the search index to disk so the next start is instant."""
+        self._search_cache_timer.stop()
+        if self._search_index is not None and self._search_cache_dirty:
+            self._search_cache_dirty = False
+            self._search_index.save()
+
+    # ------------------------------------------------------- advanced search
+    def show_advanced_search(self) -> None:
+        """Ctrl+E: the big search over the window (sections, pasted code…)."""
+        if self._advanced.isVisible():
+            self._advanced.input.setFocus()
+            self._advanced.input.selectAll()
+            return
+        if self._vault is None:
+            self._set_vault(self._settings.last_folder or self._document.directory)
+        if self._search_index is None:
+            self._start_search_index()
+        selection = self._editor.textCursor().selectedText().replace("\u2029", "\n").strip()
+        self._advanced.open_overlay(selection if selection and self._editor.hasFocus() else None)
+
+    def _open_section(self, result: SectionResult) -> None:
+        """Open the note of an advanced-search result at its section, words marked."""
+        path = Path(result.path)
+        current = self._document.path
+        if current is None or current.resolve() != path.resolve():
+            self.open_path(path)
+            if self._document.path is None or self._document.path.resolve() != path.resolve():
+                return
+        text = self._editor.toPlainText()
+        hits = term_ranges(text, result.terms, result.line, result.end_line)
+        self._search_hits = hits
+        self._search_hit = -1
+        self._editor.set_search_highlights(hits, None)
+        document = self._editor.document()
+        lines = [document.findBlock(start).blockNumber() + 1 for start, _end in hits]
+        words = sorted({part for start, end in hits
+                        for part in re.findall(r"[^\W_]+", text[start:end])})
+        if words:
+            self._preview.highlight_hits(words, lines, -1, scroll=False,
+                                         within=(result.line, result.end_line))
+        else:
+            self._preview.clear_hits()
+        self._guard()
+        self._preview.flash_line(result.line)
+        block = document.findBlockByNumber(max(0, result.line - 1))
+        if block.isValid():
+            cursor = self._editor.textCursor()
+            cursor.setPosition(block.position())
+            self._editor.setTextCursor(cursor)
+            self._editor.scroll_to_line(max(1, result.line - 1))
+        if self._view_mode is not ViewMode.PREVIEW:
+            self._editor.setFocus()
+        crumbs = " › ".join(result.crumbs)
+        self._status(f"{crumbs} — F3 / Shift+F3 jump between the marked words")
+
+    def _on_search_query_changed(self, query: str) -> None:
+        if not query:
+            self._clear_search_hits()
+        else:
+            # Keep the open note's marks in step with the query being typed.
+            self._apply_search_hits(None)
+
+    def _open_search_hit(self, path: Path, line: int, nth: int, deliberate: bool) -> None:
+        """Open a note at a search hit, marking every match in it.
+
+        Keyboard browsing (``deliberate`` False) never interrupts with an
+        unsaved-changes question: it only follows hits it can show freely.
+        """
+        path = Path(path)
+        current = self._document.path
+        same = current is not None and current.resolve() == path.resolve()
+        if not same:
+            if not deliberate and self._document.is_dirty:
+                self._status("Unsaved changes — press Enter to open this result")
+                return
+            self.open_path(path)
+            if self._document.path is None or self._document.path.resolve() != path.resolve():
+                return
+        self._apply_search_hits((line, nth))
+        if deliberate and self._view_mode is not ViewMode.PREVIEW:
+            self._editor.setFocus()
+
+    def _apply_search_hits(self, target: tuple[int, int] | None) -> None:
+        """Highlight the panel's query in the open note (editor and preview).
+
+        With ``target`` = ``(line, nth)`` the hit there becomes current and
+        both views scroll to it; with ``None`` the marks are only refreshed.
+        """
+        index = self._search_index
+        query = self._search_panel.query if self.act_toggle_search.isChecked() else ""
+        text = self._editor.toPlainText()
+        if index is None or not query or self._find_panel.isVisible():
+            if not query:
+                self._clear_search_hits()
+            return
+        exact = self._search_panel.exact
+        hits = index.title_ranges(text, parse_query(query), exact=exact)
+        self._search_hits = hits
+        if not hits:
+            self._search_hit = -1
+            self._editor.clear_search_highlights()
+            self._preview.clear_hits()
+            return
+        document = self._editor.document()
+        lines = [document.findBlock(start).blockNumber() + 1 for start, _end in hits]
+        if target is not None:
+            line, nth = target
+            on_line = [i for i, ln in enumerate(lines) if ln == line]
+            if on_line:
+                self._search_hit = on_line[min(nth, len(on_line) - 1)]
+            else:
+                self._search_hit = next((i for i, ln in enumerate(lines) if ln >= line), 0)
+        elif not 0 <= self._search_hit < len(hits):
+            self._search_hit = -1
+        words = sorted({text[s:e] for s, e in hits})
+        self._preview.highlight_hits(words, lines, self._search_hit, scroll=target is not None)
+        self._show_editor_hit(scroll=target is not None)
+
+    def _show_editor_hit(self, *, scroll: bool) -> None:
+        hits, current = self._search_hits, self._search_hit
+        chosen = hits[current] if 0 <= current < len(hits) else None
+        self._editor.set_search_highlights(hits, chosen)
+        if chosen is not None and scroll:
+            self._guard()  # the preview positions itself on the exact word
+            cursor = self._editor.textCursor()
+            cursor.setPosition(chosen[0])
+            cursor.setPosition(chosen[1], cursor.MoveMode.KeepAnchor)
+            self._editor.setTextCursor(cursor)
+            self._editor.centerCursor()
+
+    def _step_search_hit(self, delta: int) -> None:
+        """F3 / Shift+F3: the next or previous search hit in the open note."""
+        if self._find_panel.isVisible():
+            self._find_panel.find_next() if delta > 0 else self._find_panel.find_previous()
+            return
+        if not self._search_hits:
+            return
+        self._search_hit = (self._search_hit + delta) % len(self._search_hits)
+        self._preview.step_hit(delta)
+        self._show_editor_hit(scroll=True)
+        self._status(f"Hit {self._search_hit + 1} of {len(self._search_hits)}")
+
+    def _clear_search_hits(self) -> None:
+        self._search_hit_timer.stop()
+        if self._search_hits or self._search_hit >= 0:
+            self._search_hits = []
+            self._search_hit = -1
+            if not self._find_panel.isVisible():
+                self._editor.clear_search_highlights()
+        self._preview.clear_hits()
+
+    def _reapply_search_hits(self) -> None:
+        """The find bar closed: bring the vault-search marks back."""
+        if self.act_toggle_search.isChecked() and self._search_panel.query:
+            self._apply_search_hits(None)
+
     # ================================================================ dialogs
     def show_find(self) -> None:
         self._find_panel.open_panel(with_replace=False)
@@ -1776,4 +2152,6 @@ class MainWindow(QMainWindow):
         self._settings.graph_visible = self.act_toggle_graph.isChecked()
         self._settings.first_run_done = True
         self._settings.sync()
+        self._save_search_cache()
+        self._search_pool.shutdown(wait=False, cancel_futures=True)
         event.accept()
