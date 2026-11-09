@@ -102,6 +102,11 @@ curl -fsSL -o appimagetool \
     "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
 chmod +x appimagetool
 
+# Newer appimagetool builds refuse an AppDir that other users cannot read, and
+# a restrictive umask (or a 0700 directory inside the base image) is enough to
+# trigger that. The image is run by people other than whoever packed it.
+chmod -R a+rX AppDir
+
 say "packing ${OUTPUT##*/}"
 ARCH=x86_64 ./appimagetool --appimage-extract-and-run --no-appstream AppDir "${OUTPUT}"
 chmod +x "${OUTPUT}"
