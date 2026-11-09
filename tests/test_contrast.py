@@ -127,7 +127,7 @@ def test_palette_tokens_are_all_valid_colours(palette: Palette) -> None:
         hex_to_rgb(value)
 
 
-def test_all_eight_themes_are_present() -> None:
+def test_all_nine_themes_are_present() -> None:
     assert list(PALETTES) == [
         "dracula",
         "clean-light",
@@ -137,5 +137,6 @@ def test_all_eight_themes_are_present() -> None:
         "nord",
         "teal-diva-night",
         "teal-diva-day",
+        "capricorn",
     ]
-    assert sum(1 for p in ALL_PALETTES if p.is_dark) == 4
+    assert sum(1 for p in ALL_PALETTES if p.is_dark) == 5

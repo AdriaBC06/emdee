@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The eight Emdee colour palettes, defined once as colour tokens.
+"""The nine Emdee colour palettes, defined once as colour tokens.
 
 This module is the single source of truth for colour in the whole application.
 The application stylesheet (QSS), the HTML preview stylesheet, the editor syntax
@@ -296,6 +296,26 @@ PALETTES: dict[str, Palette] = {
         yellow="#a06a00",
         red="#c8324a",
         cyan="#1b7fa3",
+    ),
+    # Inspired by Capricorn's character art (the character only, not the
+    # backdrop): the black of the hair and body, the acid green of the face,
+    # the crimson of the hair and coat, the white and the blue of the eyes.
+    "capricorn": Palette(
+        key="capricorn",
+        name="Capricorn",
+        is_dark=True,
+        bg="#0a0a0a",
+        bg_alt="#050505",
+        surface="#1c1214",
+        border="#4d1f2a",
+        text="#fff4f4",
+        muted="#c4a8ad",
+        accent="#2dff72",
+        accent2="#ff2f56",
+        green="#3dff85",
+        yellow="#ffb3bf",
+        red="#ff3d5e",
+        cyan="#3d8bff",
     ),
 }
 
