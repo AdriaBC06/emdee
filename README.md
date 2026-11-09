@@ -175,8 +175,8 @@ Export what you see to a self-contained HTML file or a PDF.
 Nine palettes, switched from the preferences drawer with no restart. Every shot
 below is the same document at the same scroll position, so only the colour
 changes. The newest three — **Teal Diva Night**, **Teal Diva Day** and
-**Capricorn**, a black, acid-green and crimson dark theme — are listed in the
-palette table below.
+**Capricorn**, a black, acid-green and crimson dark theme — close the gallery;
+all nine are in the palette table below.
 
 <table>
 <tr>
@@ -205,6 +205,20 @@ palette table below.
 <td width="33%" align="center">
 <img src="screenshots/theme-nord.png" width="100%" alt="Nord theme">
 <br><b>Nord</b> <sub>· dark</sub>
+</td>
+</tr>
+<tr>
+<td width="33%" align="center">
+<img src="screenshots/theme-teal-diva-night.png" width="100%" alt="Teal Diva Night theme">
+<br><b>Teal Diva Night</b> <sub>· dark</sub>
+</td>
+<td width="33%" align="center">
+<img src="screenshots/theme-teal-diva-day.png" width="100%" alt="Teal Diva Day theme">
+<br><b>Teal Diva Day</b> <sub>· light</sub>
+</td>
+<td width="33%" align="center">
+<img src="screenshots/theme-capricorn.png" width="100%" alt="Capricorn theme">
+<br><b>Capricorn</b> <sub>· dark</sub>
 </td>
 </tr>
 </table>
